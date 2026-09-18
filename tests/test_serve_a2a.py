@@ -135,6 +135,20 @@ class TestTheTasks:
         _status, reply = _rpc(port, "message/send", {"model": "receiver-mini", "message": ""})
         assert reply["error"]["code"] == -32602                     # invalid, the params
 
+    def test_the_list_is_of_ones_own_context(self, port):
+        _s, mine = _rpc(port, "message/send", {"model": "receiver-mini", "message": "one",
+                                            "context_id": "ctx-mine", "max_new_tokens": 4})
+        _s, thine = _rpc(port, "message/send", {"model": "receiver-mini", "message": "two",
+                                             "context_id": "ctx-thine", "max_new_tokens": 4})
+        _status, listed = _rpc(port, "tasks/list", {"context_id": "ctx-mine"})
+        ids = [t["id"] for t in listed["result"]["tasks"]]
+        assert ids == [mine["result"]["id"]]                        # the parlour, one's own
+        assert thine["result"]["id"] not in ids                      # the other's, not here
+
+    def test_the_list_demands_its_context(self, port):
+        _status, reply = _rpc(port, "tasks/list", {})
+        assert reply["error"]["code"] == -32602                      # no context, no census
+
 
 class TestTheKeyAtTheDoor:
     """When the house has a key, the tasks demand it."""
@@ -150,7 +164,7 @@ class TestTheKeyAtTheDoor:
             p = httpd.server_address[1]
             _s0, denied = _rpc(p, "tasks/list", {})
             assert _s0 == 401 and denied["error"]["code"] == "invalid_api_key"   # refused, unkeyed
-            _s, ok = _rpc(p, "tasks/list", {}, key="skeleton-key")
+            _s, ok = _rpc(p, "tasks/list", {"context_id": "x"}, key="skeleton-key")
             assert "result" in ok                                   # admitted, the keyed
             _s2, card = _get(p, CARD_ROUTE)
             assert card["url"] == "https://relay.example.com:9999"  # the public url, honoured

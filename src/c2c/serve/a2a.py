@@ -143,11 +143,13 @@ class TaskStore:
         self._tasks: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def submit(self, text: str, *, context_id: str | None = None) -> dict:
+    def submit(self, text: str, *, context_id: str | None = None,
+               owner: str = "") -> dict:
         task_id = "task-" + uuid.uuid4().hex[:12]
         task = {
             "id": task_id,
             "context_id": context_id or "ctx-" + uuid.uuid4().hex[:8],
+            "owner": owner,
             "status": {"state": "submitted", "timestamp": _now()},
             "message": {"role": "user", "parts": [{"kind": "text", "text": text}]},
             "artifacts": [],
@@ -243,14 +245,22 @@ class A2AHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0") or "0")
         return self.rfile.read(length) if length > 0 else b""
 
-    def _authorized(self) -> bool:
+    def _principal(self) -> str | None:
+        """Who is asking: the bearer token of the house, the empty string of
+        the open door, or None when the key is amiss.
+
+        One key, one house, one parlour: the tasks of the bridge belong to
+        the principal that submitted them; no other peer may read them.
+        """
         cfg = self.config or ServeConfig()
         if not cfg.api_key:
-            return True                                      # the door, open by design
+            return ""                                              # the door, open by design
         header = self.headers.get("Authorization", "") or ""
         scheme, _, token = header.partition(" ")
         from .openai_proxy import constant_time_equals
-        return scheme.lower() == "bearer" and constant_time_equals(token, cfg.api_key)
+        if scheme.lower() == "bearer" and constant_time_equals(token, cfg.api_key):
+            return token
+        return None
 
     # -- the verbs ───────────────────────────────────────────────────────────
     def do_GET(self) -> None:                             # noqa: N802
@@ -275,7 +285,8 @@ class A2AHandler(BaseHTTPRequestHandler):
             self._json({"error": {"message": f"no such route: {path!r}"}},
                       HTTPStatus.NOT_FOUND)
             return
-        if not self._authorized():
+        principal = self._principal()
+        if principal is None:
             self._json({"error": {"message": "Incorrect API key provided.",
                                 "type": "authentication_error",
                                 "code": "invalid_api_key"}},
@@ -293,44 +304,56 @@ class A2AHandler(BaseHTTPRequestHandler):
         method, req_id = body["method"], body.get("id")
         params = body.get("params") if isinstance(body.get("params"), dict) else {}
         try:
-            self._dispatch(method, req_id, params)
+            self._dispatch(method, req_id, params, principal)
         except Exception as exc:                            # noqa: the wire must not drop
-            self._rpc_error(req_id, -32603, f"internal error: {exc}")
+            self.log_error("dispatch: %r", exc)
+            self._rpc_error(req_id, -32603,
+                          f"internal error: {exc.__class__.__name__} (see the server log)")
 
-    def _dispatch(self, method: str, req_id, params: dict) -> None:
+    def _dispatch(self, method: str, req_id, params: dict, principal: str) -> None:
         store, pipeline = self.store, self.pipeline
         if method in ("message/send", "tasks/send"):
-            self._send(pipeline, store, req_id, params)
+            self._send(pipeline, store, req_id, params, principal)
             return
         if method == "tasks/get":
             task = store.get(str(params.get("id", "")))
-            if task is None:
+            if task is None or task.get("owner", "") != principal:
                 self._rpc_error(req_id, -32001, "task not found")
                 return
             self._json({"jsonrpc": "2.0", "id": req_id, "result": task})
             return
         if method == "tasks/list":
+            context_id = params.get("context_id")
+            if not context_id:
+                self._rpc_error(req_id, -32602,
+                              "tasks/list requires a context_id: the bridge lists "
+                              "the tasks of one context, not of the whole house")
+                return
+            rows = [t for t in store.listed(context_id=str(context_id))
+                    if t.get("owner", "") == principal]
             self._json({"jsonrpc": "2.0", "id": req_id,
-                      "result": {"tasks": store.listed(
-                          context_id=params.get("context_id")),
-                          "next_page_token": ""}})
+                      "result": {"tasks": rows, "next_page_token": ""}})
             return
         if method == "tasks/cancel":
-            task = store.set_state(str(params.get("id", "")), "canceled")
-            if task is None:
+            wanted = store.get(str(params.get("id", "")))
+            if wanted is None or wanted.get("owner", "") != principal:
                 self._rpc_error(req_id, -32001, "task not found")
                 return
+            task = store.set_state(str(params.get("id", "")), "canceled")
             self._json({"jsonrpc": "2.0", "id": req_id, "result": task})
             return
         self._rpc_error(req_id, -32601, f"method not found: {method!r}")
 
-    def _send(self, pipeline, store: TaskStore, req_id, params: dict) -> None:
+    def _send(self, pipeline, store: TaskStore, req_id, params: dict,
+               principal: str) -> None:
         """message/send: a task, born, worked, and answered, in one exchange."""
         text = _texts_of(params.get("message", params.get("text", "")))
         if not text.strip():
             self._rpc_error(req_id, -32602, "invalid params: no text in the message")
             return
-        task = store.submit(text)
+        context_id = params.get("contextId") or params.get("context_id")
+        task = store.submit(text, owner=principal,
+                          context_id=str(context_id) if context_id else None)
         store.set_state(task["id"], "working")
         cfg = self.config or ServeConfig()
         try:
@@ -342,9 +365,12 @@ class A2AHandler(BaseHTTPRequestHandler):
                 tools=None,
                 stop=params.get("stop"))
         except Exception as exc:                            # noqa: the task, failed, said so
+            self.log_error("task %s raised %r", task["id"], exc)
             failed = store.set_state(task["id"], "failed")
             self._json({"jsonrpc": "2.0", "id": req_id,
-                      "result": {**(failed or task), "error": str(exc)}})
+                      "result": {**(failed or task),
+                               "error": f"{exc.__class__.__name__}: the task failed "
+                                        "(see the server log)"}})
             return
         answer = str(result.get("answer", ""))
         state = "fused" if result.get("used_cache") else "completed"
@@ -427,15 +453,24 @@ def build_parser(prog: str = "c2c-a2a") -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The entry point of the bridge, as the console script runs it."""
-    from .openai_proxy import _register_cli_pairs
+    from .openai_proxy import _register_cli_pairs, is_loopback
     args = build_parser("c2c-a2a").parse_args(argv)
     base = load_config(args.config)
     serve_base = getattr(base, "serve", base)
+    import os
     updates = {"host": args.host, "port": args.port,
                "certfile": args.certfile, "keyfile": args.keyfile,
-               "api_key": args.api_key, "privacy": True if args.privacy else None}
+               "api_key": args.api_key or os.environ.get("C2C_API_KEY"),
+               "privacy": True if args.privacy else None}
     cfg = ServeConfig(**{**vars(serve_base),
                         **{k: v for k, v in updates.items() if v is not None}})
+    if not cfg.api_key and not is_loopback(cfg.host):
+        from ..utils.console import error_hint
+        print(error_hint("the bridge, off the loopback, must have a key: --api-key KEY, "
+                        "or C2C_API_KEY in the environment",
+                        hint="tasks are not public; the key is what keeps them so"),
+              file=sys.stderr)
+        return 2
     if args.engine:
         default_hub.set_engine(args.engine)
     if args.pair:

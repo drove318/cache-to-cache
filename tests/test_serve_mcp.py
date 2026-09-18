@@ -277,3 +277,21 @@ class TestTheHTTPTransport:
             httpd.server_close()
             thread.join(timeout=5)
             (MCPRequestHandler.server_core, MCPRequestHandler.api_key) = saved
+
+    def test_a_network_bind_without_a_key_is_turned_away(self, monkeypatch):
+        """The HTTP transport off the loopback: no key, no service, exit two."""
+        from c2c.serve.mcp import main
+        monkeypatch.delenv("C2C_API_KEY", raising=False)
+        assert main(["--transport", "http", "--host", "0.0.0.0", "--port", "0"]) == 2
+
+    def test_the_weights_path_must_mind_the_zoo_root(self):
+        """An agent's weights come from the zoo, or from nowhere."""
+        server, _, writer = _server()
+        replies = _ask_server(server, writer,
+                          {"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                           "params": {"name": "c2c_register_pair",
+                                    "arguments": {"receiver": "r", "sharer": "s",
+                                                "weights_path": "/etc/passwd.pt"}}})
+        error = replies[0]["error"]
+        assert error["code"] == INVALID_PARAMS                       # the params, invalid
+        assert "zoo root" in error["message"]                        # the words, clear

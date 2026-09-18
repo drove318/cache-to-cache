@@ -15,18 +15,28 @@ DESCRIPTION
               under the public url of the bridge (--public-url). It
               names the skills of the bridge — the c2c tools, and the
               routes of the front — and the authentication of the house:
-              bearer, the key from C2C_API_KEY.
+              bearer, the key from --api-key or C2C_API_KEY.
 
        The task
-              A task is sent as a message; it is carried as a task, and
+              A task is sent as a message (message/send, and the
+              protocol's alias tasks/send); it is carried as a task, and
               it ends as an artifact. States: submitted, working,
-              completed, failed — and, of the cache: fused.
+              completed, failed, canceled — and, of the cache: fused.
+              tasks/get, tasks/list, tasks/cancel read the ledger; the
+              list demands a context_id, and sees but the tasks of that
+              context, of the asking principal.
 
        The trust
-              The card is public; the tasks are not. The bridge
-              forwards to the front and stores nothing. The audience
-              of the card is the public url, and the public url is not
-              a directive from the peer.
+              The card is public; the tasks are not. Each task is bound
+              to the principal that submitted it — the bearer token of
+              the house — and no other peer may read it, cancel it, or
+              count it. One key is one house: serve many houses behind
+              one key with care, or run one bridge per house. The bridge
+              will not bind an address off the loopback without a key.
+              The bridge forwards to the front and stores nothing
+              beyond the living tasks. The audience of the card is the
+              public url, and the public url is not a directive from
+              the peer.
 
 WIRE
        JSON-RPC over HTTPS, the method names of the protocol, the
@@ -36,11 +46,13 @@ WIRE
 
 EXIT STATUS
        0  the bridge crossed
-       1  the card, unreadable; the task, refused
+       1  the card, unreadable; the task, refused; the bind, impossible
+       2  the usage, amiss — as a network bind without a key
 
 EXAMPLES
        c2c-a2a --pair math-small:coder-small -e hf --port 8122 \
-              --public-url https://relay.example.com:8122
+              --public-url https://relay.example.com:8122 \
+              --api-key "$C2C_API_KEY"
 
 SEE ALSO
        c2c(1), c2c-serve(1), c2c-proxy(7), SECURITY.md in the source

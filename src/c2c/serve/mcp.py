@@ -148,45 +148,48 @@ class MCPServer:
             self.dispatch(message)
 
     def respond(self, message: dict) -> dict | None:
-        """One JSON-RPC message in, the answer (or none) out, in both transports."""
-        container: dict[str, dict] = {}
+        """One JSON-RPC message in, the answer (or none) out, for the HTTP transport.
 
-        def emit(reply: dict) -> None:
-            container["reply"] = reply
-
-        original, self.write = self.write, emit
-        try:
-            self.dispatch(message)
-        finally:
-            self.write = original
-        return container.get("reply")
+        The reply is captured thread-locally: the core is shared, the
+        capture is not. No attribute of the server is ever swapped here,
+        so no two requests can read one another's answers.
+        """
+        box: dict[str, dict] = {}
+        self._route(message, lambda reply: box.__setitem__("reply", reply))
+        return box.get("reply")
 
     def dispatch(self, message: dict) -> None:
+        """The stdio way: one message in, the answer written out."""
+        self._route(message, self.write)
+
+    def _route(self, message: dict, emit) -> None:
+        """The conversation itself, with the answer handed to ``emit``."""
         method = message.get("method")
         identifier = message.get("id")
         is_notification = identifier is None and method is not None
         if not isinstance(message, dict) or not isinstance(method, str):
             if not is_notification:
-                self.write(self._error(identifier, INVALID_REQUEST,
-                                     "a JSON-RPC request must carry a method"))
+                emit(self._error(identifier, INVALID_REQUEST,
+                              "a JSON-RPC request must carry a method"))
             return
         if is_notification:                           # notifications: acknowledged
             return                                       # ignored, as the spec says
         handler = self._handlers.get(method)
         if handler is None:
-            self.write(self._error(identifier, METHOD_NOT_FOUND,
-                                 f"method {method!r} is not known"))
+            emit(self._error(identifier, METHOD_NOT_FOUND,
+                          f"method {method!r} is not known"))
             return
         try:
             result = handler(message.get("params") or {})
         except _BadParams as exc:
-            self.write(self._error(identifier, INVALID_PARAMS, str(exc)))
+            emit(self._error(identifier, INVALID_PARAMS, str(exc)))
             return
         except Exception as exc:                        # noqa: report, do not crash
             self.log(f"handler {method} raised {exc.__class__.__name__}: {exc}")
-            self.write(self._error(identifier, INTERNAL_ERROR, str(exc)))
+            emit(self._error(identifier, INTERNAL_ERROR,
+                         f"internal error: {exc.__class__.__name__} (see the server log)"))
             return
-        self.write({"jsonrpc": "2.0", "id": identifier, "result": result})
+        emit({"jsonrpc": "2.0", "id": identifier, "result": result})
 
     # -- the lifecycle handlers ─────────────────────────────────────────────
     def _on_initialize(self, params: dict) -> dict:
@@ -221,7 +224,9 @@ class MCPServer:
         except _BadParams:
             raise
         except Exception as exc:                        # tool errors are results
-            return {"content": [{"type": "text", "text": f"error: {exc}"}],
+            self.log(f"tool {name} raised {exc.__class__.__name__}: {exc}")
+            return {"content": [{"type": "text",
+                              "text": f"tool {name} failed: {exc.__class__.__name__}"}],
                    "isError": True}
         return {"content": [{"type": "text",
                             "text": payload if isinstance(payload, str)
@@ -238,8 +243,17 @@ class MCPServer:
         weights_path = args.get("weights_path")
         fuser = None
         if weights_path:
+            import os
+            from ..zoo.publish import DEFAULT_ZOO_ROOT
             from .openai_proxy import _load_fuser_state
-            fuser = _load_fuser_state(str(weights_path))
+            root = os.path.realpath(os.path.expanduser(
+                os.environ.get("C2C_ZOO_ROOT") or DEFAULT_ZOO_ROOT))
+            path = os.path.realpath(os.path.expanduser(str(weights_path)))
+            if not path.startswith(root + os.sep) or not path.endswith(".pt"):
+                raise _BadParams(
+                    f"weights_path must name a .pt inside the zoo root {root!r}; "
+                    "publish it first (c2c zoo publish), or move the zoo with C2C_ZOO_ROOT")
+            fuser = _load_fuser_state(path)
         pair = self.hub.register_pair(receiver=receiver, sharer=sharer, fuser=fuser)
         return {"ok": True, "id": f"c2c/{pair.id}", "fused": pair.fused}
 
@@ -318,7 +332,11 @@ def build_parser(prog: str = "c2c-mcp") -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8789,
                         help="http only: port to listen on (default 8789)")
     parser.add_argument("--api-key", default=None,
-                        help="http only: when set, require 'Authorization: Bearer <key>'")
+                       help="http only: when set, require 'Authorization: Bearer <key>'")
+    parser.add_argument("--certfile", default=None,
+                       help="http only: PEM certificate; with --keyfile, TLS on the wire")
+    parser.add_argument("--keyfile", default=None,
+                       help="http only: PEM key for --certfile")
     parser.add_argument("--verbose", action="store_true",
                         help="report every request to stderr")
     return parser
@@ -412,18 +430,31 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
     if args.transport == "stdio":
         server.serve_forever()
         return 0
-    from ..utils.console import banner
+    import os
+    from ..utils.console import banner, error_hint
+    from .openai_proxy import is_loopback
+    api_key = args.api_key or os.environ.get("C2C_API_KEY")
+    if not api_key and not is_loopback(args.host):
+        print(error_hint("the HTTP transport, off the loopback, must have a key: "
+                        "--api-key KEY, or C2C_API_KEY in the environment",
+                        hint="on the loopback the pipe itself is the trust; off it, the key is"),
+              file=sys.stderr)
+        return 2
     MCPRequestHandler.server_core = server
-    MCPRequestHandler.api_key = args.api_key
-    MCPRequestHandler.verbose = args.verbose
+    MCPRequestHandler.api_key = api_key
     try:
         httpd = MCPHTTPServer((args.host, args.port), MCPRequestHandler)
+        if args.certfile and args.keyfile:
+            from .openai_proxy import _make_ssl_context
+            httpd.socket = _make_ssl_context(args.certfile, args.keyfile).wrap_socket(
+                httpd.socket, server_side=True)
     except OSError as exc:
         sys.stderr.write(f"c2c-mcp: cannot bind {args.host}:{args.port}: {exc}\n")
         return 1
     sys.stderr.write(banner("mcp", __version__) + "\n")
-    sys.stderr.write(f"  listening on http://{args.host}:{args.port} "
-                     "(JSON-RPC over POST /), or the tools of the trade\n")
+    scheme = "https" if (args.certfile and args.keyfile) else "http"
+    sys.stderr.write(f"  listening on {scheme}://{args.host}:{args.port} "
+                     "(JSON-RPC over POST /); the tools of the trade\n")
     sys.stderr.write("  the tools are the verbs; the caches are the nouns; the loop stays the client's.\n")
     try:
         httpd.serve_forever()

@@ -52,7 +52,7 @@ from ..utils.console import banner, style
 from .registry import default_hub
 
 __all__ = ["create_server", "serve_forever", "main", "canonical_routes",
-           "constant_time_equals"]
+           "constant_time_equals", "is_loopback"]
 
 # ---------------------------------------------------------------------------
 # the canonical routes and the standard media type, assembled from
@@ -108,6 +108,11 @@ def constant_time_equals(candidate: str, key: str) -> bool:
     is a measurement an attacker may read; this one is not.
     """
     return hmac.compare_digest(candidate.encode("utf-8"), key.encode("utf-8"))
+
+
+def is_loopback(host: str | None) -> bool:
+    """The addresses of the house itself: the loopback, and nothing else."""
+    return (host or "127.0.0.1") in ("127.0.0.1", "localhost", "::1")
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +195,9 @@ class ChatPipeline:
                             err_type="engine_error", code="engine_error", param="model")
         prompt_ids = list(encode(prompt_text))
         c2c_options = dict(c2c_options or {})
-        if not target.relay and target.fuser is not None and target.sharer is not None:
+        sealed = bool(getattr(getattr(self.hub, "config", None), "privacy", False))
+        if (not sealed and not target.relay and target.fuser is not None
+                and target.sharer is not None):
             answer, used = self._run_c2c(target, prompt_text, prompt_ids,
                                      max_new_tokens, temperature, tools, stop, c2c_options)
         else:
@@ -386,7 +393,8 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:                             # noqa: last line of defence
             self.log_error("unhandled: %r", exc)
             self._json(HttpProblem(HTTPStatus.INTERNAL_SERVER_ERROR,
-                                f"internal error: {exc}").to_json(),
+                                f"internal error: {exc.__class__.__name__} "
+                                "(see the server log)").to_json(),
                        HTTPStatus.INTERNAL_SERVER_ERROR)
 
     # -- the two completions routes ────────────────────────────────────────
@@ -656,11 +664,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser("c2c-serve")
     args = parser.parse_args(argv)
     base = load_config(args.config)
+    import os
     updates = {"host": args.host, "port": args.port,
-              "certfile": args.certfile, "keyfile": args.keyfile,
-              "api_key": args.api_key, "privacy": True if args.privacy else None}
+               "certfile": args.certfile, "keyfile": args.keyfile,
+               "api_key": args.api_key or os.environ.get("C2C_API_KEY"),
+               "privacy": True if args.privacy else None}
     cfg = ServeConfig(**{**vars(base.serve if hasattr(base, "serve") else base),
-                       **{k: v for k, v in updates.items() if v is not None}})
+                        **{k: v for k, v in updates.items() if v is not None}})
+    if not cfg.api_key and not is_loopback(cfg.host):
+        from ..utils.console import error_hint
+        print(error_hint("the front, off the loopback, must have a key: --api-key KEY, "
+                        "or C2C_API_KEY in the environment",
+                        hint="the loopback serves without one; the network does not"),
+              file=sys.stderr)
+        return 2
     if args.engine:
         default_hub.set_engine(args.engine)
     if args.pair:

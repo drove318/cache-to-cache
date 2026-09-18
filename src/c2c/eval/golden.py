@@ -81,31 +81,74 @@ TABLES: dict[str, dict] = {
     },
 
     # -- Table 4 + §4.2: main results, receiver fixed (Qwen3-0.6B) ----------------------
+    # accuracy (%), time (s), the columns of the table as printed
     "table04": {
         "receiver": RECEIVER,
         "benchmarks": BENCHMARKS_ORDER,
         "receiver_only": {"MMLU-Redux": 35.53, "OpenBookQA": 39.20,
                         "ARC-C": 41.04, "C-Eval": 32.04},
+        "receiver_only_time": {"MMLU-Redux": 0.29, "OpenBookQA": 0.27,
+                            "ARC-C": 0.29, "C-Eval": 0.26},
         "sharers": {
             "Qwen2.5-0.5B-Instruct": {
-                "sharer_only": {"MMLU-Redux": 32.30, "OpenBookQA": 32.60,
-                             "ARC-C": 33.57, "C-Eval": 31.31},
+                "sharer_only": {"MMLU-Redux": 38.42, "OpenBookQA": 45.60,
+                             "ARC-C": 42.09, "C-Eval": 40.21},
+                "sharer_only_time": {"MMLU-Redux": 0.34, "OpenBookQA": 0.35,
+                                  "ARC-C": 0.39, "C-Eval": 0.31},
                 "t2t": {"MMLU-Redux": 41.03, "OpenBookQA": 44.00,
                       "ARC-C": 49.48, "C-Eval": 35.88},
+                "t2t_time": {"MMLU-Redux": 1.52, "OpenBookQA": 0.81,
+                          "ARC-C": 1.00, "C-Eval": 1.51},
                 "c2c": {"MMLU-Redux": 42.92, "OpenBookQA": 52.60,
                       "ARC-C": 54.52, "C-Eval": 41.77},
+                "c2c_time": {"MMLU-Redux": 0.40, "OpenBookQA": 0.30,
+                          "ARC-C": 0.36, "C-Eval": 0.34},
+                "routing": {"MMLU-Redux": 35.58, "OpenBookQA": 40.80,
+                         "ARC-C": 40.70, "C-Eval": 34.61},
+                "routing_time": {"MMLU-Redux": 0.27, "OpenBookQA": 0.29,
+                             "ARC-C": 0.29, "C-Eval": 0.26},
                 "gain_over_individual": 11.00,
                 "gain_over_t2t": 5.36,
                 "speedup": 3.46,
             },
             "Llama3.2-1B": {
-                "sharer_only": {"MMLU-Redux": 16.39, "OpenBookQA": 22.20,
-                             "ARC-C": 19.65, "C-Eval": 15.10},
+                "sharer_only": {"MMLU-Redux": 32.30, "OpenBookQA": 32.60,
+                             "ARC-C": 33.57, "C-Eval": 31.31},
+                "sharer_only_time": {"MMLU-Redux": 0.06, "OpenBookQA": 0.07,
+                                  "ARC-C": 0.07, "C-Eval": 0.04},   # App. A.4.3, the fast one
+                "t2t": {"MMLU-Redux": 43.32, "OpenBookQA": 41.20,
+                      "ARC-C": 50.00, "C-Eval": 35.27},
+                "t2t_time": {"MMLU-Redux": 0.75, "OpenBookQA": 0.70,
+                          "ARC-C": 0.70, "C-Eval": 0.71},
+                "c2c": {"MMLU-Redux": 44.42, "OpenBookQA": 47.80,
+                      "ARC-C": 53.39, "C-Eval": 40.77},
+                "c2c_time": {"MMLU-Redux": 0.50, "OpenBookQA": 0.43,
+                          "ARC-C": 0.47, "C-Eval": 0.49},
+                "routing": {"MMLU-Redux": 33.38, "OpenBookQA": 36.40,
+                         "ARC-C": 37.22, "C-Eval": 31.92},
+                "routing_time": {"MMLU-Redux": 0.18, "OpenBookQA": 0.17,
+                             "ARC-C": 0.18, "C-Eval": 0.15},
                 "gain_over_individual": 9.64,
                 "gain_over_t2t": 4.15,
                 "speedup": 1.51,
             },
             "Qwen3-4B-Base": {
+                "sharer_only": {"MMLU-Redux": 1.03, "OpenBookQA": 2.20,        # the base
+                             "ARC-C": 1.48, "C-Eval": 5.65},                   # ignores the
+                "sharer_only_time": {"MMLU-Redux": 2.06, "OpenBookQA": 1.98,   # instructions
+                                  "ARC-C": 2.06, "C-Eval": 2.02},
+                "t2t": {"MMLU-Redux": 43.87, "OpenBookQA": 46.40,
+                      "ARC-C": 53.91, "C-Eval": 38.92},
+                "t2t_time": {"MMLU-Redux": 7.54, "OpenBookQA": 5.08,           # excessively long
+                          "ARC-C": 6.56, "C-Eval": 3.59},                      # t2t, as printed
+                "c2c": {"MMLU-Redux": 43.95, "OpenBookQA": 53.20,
+                      "ARC-C": 55.39, "C-Eval": 42.79},
+                "c2c_time": {"MMLU-Redux": 0.45, "OpenBookQA": 0.34,
+                          "ARC-C": 0.40, "C-Eval": 0.39},
+                "routing": {"MMLU-Redux": 16.39, "OpenBookQA": 22.20,
+                         "ARC-C": 19.65, "C-Eval": 15.10},
+                "routing_time": {"MMLU-Redux": 0.28, "OpenBookQA": 0.27,
+                             "ARC-C": 0.28, "C-Eval": 0.26},
                 "gain_over_individual": 11.88,
                 "gain_over_t2t": 3.06,
                 "speedup": 14.41,
@@ -195,12 +238,12 @@ TABLES["table15"] = {
 }
 
 #: Figures 3–13 as named in the paper; the pixel data of the plots was
-#: not part of the text extraction. The golden suite marks every figure
-#: as unavailable and skips its test with this reason.
+#: not part of the text extraction. Every one of them joins the fellowship
+#: of the unavailable, and the golden suite skips its test with this reason.
 FIGURES: dict[str, str] = {
     f"figure{n:02}": f"Figure {n} (§/App. — plot data not machine-readable"
                     f" in the arXiv:2510.03215v2 text extraction)"
-    for n in (3, 4, 7, 10, 11, 12, 13)
+    for n in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 }
 
 #: Table 9 (C2C-C comparison) and Table 14 (many-to-many) join the same

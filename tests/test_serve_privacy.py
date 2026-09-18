@@ -174,3 +174,36 @@ class TestTheWire:
         assert status == 200                                             # the wire, live
         assert "sha256:" in logged                                       # digests, logged
         assert "secret of the machines" not in logged                    # the words, within
+
+
+class TestTheSealAtThePipe:
+    """The privacy flag on the served: the sharer's cache, refused before the attempt."""
+
+    def test_a_sealed_front_answers_alone(self):
+        from c2c.fuser import Fuser
+        from c2c.serve.openai_proxy import ChatPipeline
+        from c2c.serve.registry import ModelHub
+        hub = ModelHub(ServeConfig(api_key=None, privacy=True))
+        hub.set_engine("reference")
+        hub.register_model("receiver-mini")
+        hub.register_model("sharer-mini")
+        recv = hub._resolve_side("receiver-mini")
+        shar = hub._resolve_side("sharer-mini")
+        g_r, g_s = recv.spec().geometry, shar.spec().geometry
+        fuser = Fuser(g_r, g_s, list(range(min(g_r.layers, g_s.layers))))
+        hub.register_pair(receiver="receiver-mini", sharer="sharer-mini", fuser=fuser)
+        touched: list[str] = []
+        real_capture = shar.capture
+
+        def spying(ids):
+            touched.append("captured")
+            return real_capture(ids)
+
+        shar.capture = spying
+        pipeline = ChatPipeline(hub=hub)
+        out = pipeline.complete(model="c2c/receiver-mini←sharer-mini",
+                             prompt_text="what is two plus two", max_new_tokens=6,
+                             temperature=0.0, tools=None, stop=None)
+        assert out["used_cache"] is False                            # the seal, honoured
+        assert touched == []                                          # the sharer, untouched
+        assert out["answer"]                                            # the receiver, answering

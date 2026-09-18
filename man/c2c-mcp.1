@@ -20,6 +20,8 @@ DESCRIPTION
        c2c_register_pair
               receiver, sharer (required); engine, weights_path (optional).
               Declare a collaboration; returns the canonical pair id.
+              The weights_path, when given, must name a .pt inside the zoo
+              root (C2C_ZOO_ROOT): an agent's weights come from the zoo.
 
        c2c_fuse
               model, prompt (required). Fuse the pair's caches over the
@@ -41,12 +43,19 @@ OPTIONS
        --transport http       JSON-RPC over HTTP, on --host:--port
        --host HOST            http only; default 127.0.0.1, and wisely so
        --port PORT            http only; default 8789
-       --api-key KEY          http only; require Authorization: Bearer KEY
+       --api-key KEY          http only; require Authorization: Bearer KEY.
+                              A bind off the loopback will not start without
+                              one; the loopback itself may stand open, as the
+                              pipe is the trust. (C2C_API_KEY serves alike.)
+       --certfile FILE        http only; PEM certificate for TLS
+       --keyfile FILE         http only; PEM key; together, TLS on the
+                              wire, and the bearer token rides it sealed
        --verbose              report every request to stderr
 
 EXIT STATUS
        0  the session, ended well
        1  the transport, misbound (a port already answered, or no such host)
+       2  the usage, amiss — as a network bind without a key
 
 EXAMPLES
        The client, the standard input, the standard output::

@@ -145,7 +145,10 @@ class ZooClient:
         with open(manifest_path, encoding="utf-8") as fh:
             manifest = json.load(fh)
         want = manifest.get("sha256")
-        if want and _sha256(weights_path) != want:
+        if not want:
+            msg = f"{pid}: the manifest carries no sha256 seal; the blob is refused, not trusted"
+            raise ValueError(msg)
+        if _sha256(weights_path) != want:
             msg = f"{pid}: sha256 mismatch for {WEIGHTS_NAME} (truncated or tampered)"
             raise ValueError(msg)
 
@@ -214,7 +217,11 @@ class ZooClient:
         os.close(tmp_fd)
         try:
             self._download(url, tmp_name)
-            if manifest.get("sha256") and _sha256(tmp_name) != manifest["sha256"]:
+            seal = manifest.get("sha256")
+            if not seal:
+                msg = f"{pid}: the hub manifest carries no sha256 seal; the download is refused"
+                raise OSError(msg)
+            if _sha256(tmp_name) != seal:
                 msg = f"{pid}: sha256 mismatch for {WEIGHTS_NAME} (truncated or tampered)"
                 raise OSError(msg)
             os.replace(tmp_name, os.path.join(directory, WEIGHTS_NAME))

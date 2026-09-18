@@ -162,6 +162,23 @@ class TestTheShelf:
         assert manifest["receiver"] == "receiver-mini"
         assert manifest["sha256"]                                      # the seal, on it
 
+    def test_an_unsealed_manifest_is_refused(self):
+        """No seal on the shelf: the blob, not trusted, not loaded."""
+        manifest = self.client.publish(fuser=self._train_a_fuser(),
+                                    sharer="sharer-9", receiver="receiver-mini")
+        pair_dir = os.path.join(self.root, manifest["id"])
+        record = os.path.join(pair_dir, MANIFEST_NAME)
+        with open(record, encoding="utf-8") as fh:
+            data = json.load(fh)
+        data.pop("sha256")                                              # the seal, struck out
+        with open(record, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        with pytest.raises(ValueError, match="no sha256 seal"):
+            self.client.fetch(sharer="sharer-9", receiver="receiver-mini")
+        with pytest.raises(ValueError, match="no sha256 seal"):
+            self.client.load_fuser(sharer="sharer-9", receiver="receiver-mini",
+                                fuser_builder=lambda: None)
+
     def test_fetch_round_trips_the_fuser(self):
         """Publish, load, compare: the weights, in and out, the same."""
         from c2c.fuser import Fuser
