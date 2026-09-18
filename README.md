@@ -41,7 +41,7 @@ c2c doctor                                   # the checkup, printed
 c2c fuse --receiver receiver-mini --sharer sharer-mini \
        -e reference --prompt "what is two plus two" --answer --report
 c2c train -d fixtures/datasets/tiny.jsonl \
-       --receiver receiver-mini --sharer sharer-mini -e reference --report
+       --receiver receiver-mini --sharer sharer-mini -e reference --verbose
 c2c eval --table 4 --verbose                  # the paper's Tables 3–8, as far as CI can see
 ```
 
@@ -54,18 +54,18 @@ terminal.
 The same wire, every harness. Point a client, or a harness, at the served
 front — an OpenAI-compatible endpoint — and the models speak cache-to-cache:
 
-```bash
-c2c-serve --pair receiver-mini:sharer-mini -e hf --port 8121 --api-key "$C2C_API_KEY"
-```
-
 ```python
-from openai import client                       # any client, any harness, any model
-client = client(base_url="http://127.0.0.1:8121/v1", api_key=os.environ["C2C_API_KEY"])
-client.chat.completions.create(model="c2c/receiver-mini+sharer-mini",
-                               messages=[{"role": "user", "content": "two plus two?"}])
+import os
+from openai import OpenAI                       # any client, any harness, any model
+client = OpenAI(base_url="http://127.0.0.1:8121/v1",
+                api_key=os.environ["C2C_API_KEY"])
+answer = client.chat.completions.create(
+    model="c2c/receiver-mini+sharer-mini",
+    messages=[{"role": "user", "content": "two plus two?"}])
+print(answer.choices[0].message.content)
 ```
 
-Hermes, OpenClaw, Claude Code, Codex, Pi, OpenCode — every harness installs,
+Oh My Pi (omp), Hermès, Claude Code, Codex, AutoGen, LangChain, CrewAI — every harness installs,
 every harness communicates. See [`docs/harnesses/`](docs/harnesses/), one
 recipe per harness; for the agnostic, the generic route is
 [`docs/harnesses/generic.md`](docs/harnesses/generic.md). The MCP server
