@@ -466,6 +466,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return func(args, args.extras)
     try:
         return func(args)
+    except ModuleNotFoundError as exc:
+        if "torch" not in str(exc):
+            raise
+        print(error_hint("the ML backend is absent: this command fits fusers, and needs torch",
+                        hint="pip install 'c2c-cache[train]' — the relay works without it"),
+              file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130

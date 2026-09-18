@@ -596,6 +596,7 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
 
 def _register_cli_pairs(hub, pairs: Sequence[str], *, engine: str | None = None) -> None:
     """Parse ``--pair`` specifications and register them on the hub."""
+    probed: set[str] = set()
     for raw in pairs:
         body, sep, tail = str(raw).partition(":")
         weights = tail if (sep and tail and os.path.isfile(tail)) else None
@@ -608,6 +609,18 @@ def _register_cli_pairs(hub, pairs: Sequence[str], *, engine: str | None = None)
         if weights is not None:
             fuser = _load_fuser_state(weights)
         hub.register_pair(receiver=receiver_id, sharer=sharer_id, fuser=fuser)
+        name = engine or hub.engine_name
+        if name not in probed:
+            probed.add(name)
+            try:
+                from ..integrations.registry import engines
+                engines.load(name, model_id="__bind-probe__")
+            except (ModuleNotFoundError, ImportError, ValueError, RuntimeError) as exc:
+                sys.stderr.write(
+                    f"c2c-serve: the pair {raw!r} is on the shelf, but the engine "
+                    f"{name!r} cannot build its models: {exc}\n"
+                    f"             requests naming it relay without fusion; to fit the "
+                    f"fuser, pip install 'c2c-cache[train]'\n")
 
 
 def _load_fuser_state(path: str):

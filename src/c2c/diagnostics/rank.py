@@ -21,13 +21,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-import torch
 
 from ..types import LayeredCache
 
 __all__ = ["effective_rank", "rank_report", "RankReport"]
 
-_TINY = torch.finfo(torch.float32).tiny
+_TINY = 1.1754944e-38   # torch.finfo(torch.float32).tiny, kept plain: no torch at import time
 
 
 def effective_rank(matrix) -> float:
@@ -38,6 +37,7 @@ def effective_rank(matrix) -> float:
     numerically stable ``torch.linalg.svdvals`` routine; the empty
     matrix has effective rank 0 (the empty set has rank 0, as it must).
     """
+    import torch
     x = matrix if hasattr(matrix, "square") else torch.as_tensor(matrix, dtype=torch.float32)
     if x.numel() == 0:
         return 0.0

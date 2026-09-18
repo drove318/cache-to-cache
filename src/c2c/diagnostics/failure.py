@@ -36,7 +36,6 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Sequence
 
-import torch
 
 from ..types import LayeredCache
 
@@ -105,6 +104,7 @@ class FailureProbe:
 
     @staticmethod
     def _magnitude(tensor) -> float:
+        import torch
         t = tensor.reshape(-1) if hasattr(tensor, "reshape") else torch.as_tensor(tensor)
         return float(t.norm()) if t.numel() else 0.0
 
@@ -113,6 +113,7 @@ class FailureProbe:
         """a − b for tensor-likes; falls back to as_tensor for plain sequences."""
         if hasattr(a, "__sub__") and hasattr(b, "__sub__"):
             return a - b
+        import torch
         ta = torch.as_tensor(a, dtype=torch.float32)
         tb = torch.as_tensor(b, dtype=torch.float32)
         return ta - tb

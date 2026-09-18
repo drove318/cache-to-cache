@@ -1,6 +1,6 @@
-"""Tests for diagnostics, doctor, and failure modes (FR-15/16/17).
+"""Tests for diagnostics, doctor, and failure modes (FR-16/FR-17).
 
-The effective rank (Eq. 4, Roy–Vetterli 2007), the rank report of the
+The effective rank (§4.5, Roy & Vetterli 2007), the rank report of the
 fusion, the gate regimes, the failure attribution of §5.1, and the
 doctor's checkup. Measurements, not measurements of measurements.
 """
@@ -246,3 +246,38 @@ class TestDoctor:
                                            STATUS_WARN)
         for token in (STATUS_OK, STATUS_WARN, STATUS_FAIL, STATUS_SKIP):
             assert isinstance(token, str) and token               # printable, in the card
+
+
+class TestTheDoctorInRelayMode:
+    """A machine without torch is a supported machine: report it, do not die on it.
+
+    Regression: the diagnostics once bound the backend at module scope, so
+    ``c2c doctor`` — the very tool that tells you a backend is missing —
+    died with a traceback before it could say so. Both the package import
+    and the checkup must survive a world without the nets.
+    """
+
+    def test_the_checkup_survives_a_world_without_torch(self, monkeypatch):
+        import sys
+
+        class DeclinesTorch:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname.partition(".")[0] == "torch":
+                    raise ModuleNotFoundError("No module named 'torch'")
+                return None
+
+        monkeypatch.setattr(sys, "meta_path", [DeclinesTorch(), *sys.meta_path])
+        for name in [n for n in list(sys.modules)
+                     if n == "torch" or n.startswith("torch.")
+                     or n == "c2c.diagnostics" or n.startswith("c2c.diagnostics.")]:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+
+        import c2c.diagnostics                          # the package: importable, bare
+        from c2c.diagnostics.doctor import (STATUS_OK, STATUS_SKIP, STATUS_WARN, run_all)
+
+        checks = run_all(C2CConfig(), verbose=False)
+        by_name = {c.name: c for c in checks}
+        assert by_name["torch"].status == STATUS_WARN   # reported, not raised
+        assert by_name["torch"].hint                     # and, with a way out
+        assert by_name["caches"].status == STATUS_SKIP   # the miniature, furled
+        assert by_name["numpy"].status == STATUS_OK      # the base dep, sound

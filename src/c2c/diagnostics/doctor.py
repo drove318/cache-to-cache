@@ -84,27 +84,39 @@ def check_backends() -> list[Check]:
             dev = f"cuda:{torch.cuda.device_count() if callable(torch.cuda.device_count) else '?'}"
         checks.append(Check("torch", STATUS_OK, f"{torch.__version__} ({dev})"))
     except ModuleNotFoundError as exc:
-        checks.append(Check("torch", STATUS_FAIL, str(exc),
-                           hint="pip install 'c2c-cache[train]'"))
+        checks.append(Check("torch", STATUS_WARN,
+                          f"{exc} — relay mode: the fronts serve, the nets stay furled",
+                          hint="pip install 'c2c-cache[train]' for the fuser and training"))
+    except ImportError as exc:
+        checks.append(Check("torch", STATUS_FAIL, f"present but unimportable: {exc}",
+                          hint="reinstall the 'c2c-cache[train]' extra"))
     return checks
 
 
 def check_engines() -> list[Check]:
-    """Enumerate the adapters of the ``c2c.engines`` group."""
+    """Enumerate the adapters of the ``c2c.engines`` group, one line per target."""
     from ..integrations.registry import engines
     checks: list[Check] = []
     known = engines.registered_names()
+    seen: set[str] = set()
     for name in sorted(known):
+        target = engines.lookup(name)
+        if target in seen:
+            continue                                   # aliases, reported once
+        seen.add(target)
         try:
             engines.load(name, model_id=f"probe-{name}")
             checks.append(Check(f"engine:{name}", STATUS_OK, "registered"))
-        except (ModuleNotFoundError, ValueError, RuntimeError) as exc:
+        except (ModuleNotFoundError, ImportError, ValueError, RuntimeError) as exc:
             # AdapterNotSupported is a RuntimeError; the doctor reports, never crashes
-            checks.append(Check(f"engine:{name}", STATUS_WARN, str(exc),
-                               hint=f"pip install the '{name}' extra, or use --engine reference"))
+            if target.endswith(":ReferenceAdapter"):
+                hint = "pip install 'c2c-cache[train]' — the reference engine is the house nets"
+            else:
+                hint = f"pip install the '{name}' extra, or use --engine reference"
+            checks.append(Check(f"engine:{name}", STATUS_WARN, str(exc), hint=hint))
     if not known:
         checks.append(Check("engine", STATUS_WARN, "no adapters found",
-                           hint="is the distribution installed? pip install c2c-cache"))
+                          hint="is the distribution installed? pip install c2c-cache"))
     return checks
 
 
