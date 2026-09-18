@@ -8,7 +8,7 @@ may reach.
 ## Reporting a vulnerability
 
 Do **not** open a public issue for a security fault. Write to the maintainer,
-encrypted, at `paul.j.reuer@gmail.com`; the fingerprint is published on the
+encrypted, at `158539850+drove318@users.noreply.github.com`; the fingerprint is published on the
 releases page. One plain text per message; a reply within three working days,
 a fix within ninety days, coordinated disclosure on publication.
 

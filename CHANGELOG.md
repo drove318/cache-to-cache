@@ -51,5 +51,5 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
   whole of it, offline, on any harness, on any CPU.
 - The first tests: unit, golden, conformance, and the smoke tests of the served.
 
-[1.0.0]: https://github.com/paul-j-reuer-account/cache-to-cache/releases/tag/v1.0.0
-[0.1.0]: https://github.com/paul-j-reuer-account/cache-to-cache/releases/tag/v0.1.0
+[1.0.0]: https://github.com/drove318/cache-to-cache/releases/tag/v1.0.0
+[0.1.0]: https://github.com/drove318/cache-to-cache/releases/tag/v0.1.0

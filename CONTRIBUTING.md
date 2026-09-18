@@ -28,7 +28,7 @@ instruction to contributors too.
 ## The environment
 
 ```bash
-git clone https://github.com/paul-j-reuer-account/cache-to-cache
+git clone https://github.com/drove318/cache-to-cache
 cd cache-to-cache
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[train,dev]"        # torch, pytest, ruff, mypy

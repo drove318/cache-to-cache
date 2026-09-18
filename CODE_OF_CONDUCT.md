@@ -47,7 +47,7 @@ and in public spaces when an individual represents the project.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour
-may be reported to the maintainers at `paul.j.reuer@gmail.com`. All
+may be reported to the maintainers at `158539850+drove318@users.noreply.github.com`. All
 complaints will be reviewed and investigated promptly and fairly.
 
 Community leaders who do not follow or enforce the Code in good faith

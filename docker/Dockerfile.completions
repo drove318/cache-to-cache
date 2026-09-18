@@ -9,7 +9,7 @@ FROM python:3.12-slim
 LABEL org.opencontainers.image.title="c2c completions"
 LABEL org.opencontainers.image.description="the OpenAI-compatible front of Cache-to-Cache"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
-LABEL org.opencontainers.image.source="https://github.com/paul-j-reuer-account/cache-to-cache"
+LABEL org.opencontainers.image.source="https://github.com/drove318/cache-to-cache"
 
 # one layer for the runtime bits, no recommends, no suggests
 RUN apt update \

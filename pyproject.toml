@@ -21,7 +21,7 @@ description = "Cache-to-Cache (C2C): direct semantic communication between LLMs 
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Paul J. Reuer", email = "paul.j.reuer@gmail.com" }]
+authors = [{ name = "Paul J. Reuer", email = "158539850+drove318@users.noreply.github.com" }]
 dependencies = [
   "numpy>=1.24",
 ]
@@ -41,10 +41,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/paul-j-reuer/cache-to-cache"
-Repository = "https://github.com/paul-j-reuer/cache-to-cache"
-Documentation = "https://github.com/paul-j-reuer/cache-to-cache/tree/main/docs"
-Issues = "https://github.com/paul-j-reuer/cache-to-cache/issues"
+Homepage = "https://github.com/drove318/cache-to-cache"
+Repository = "https://github.com/drove318/cache-to-cache"
+Documentation = "https://github.com/drove318/cache-to-cache/tree/main/docs"
+Issues = "https://github.com/drove318/cache-to-cache/issues"
 Paper = "https://arxiv.org/abs/2510.03215"
 
 [project.optional-dependencies]
