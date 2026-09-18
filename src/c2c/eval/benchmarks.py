@@ -156,7 +156,7 @@ def fetch(url: str, destination: str, *, timeout: float = 60.0) -> bool:
     tmp = destination + ".part"
     try:
         request = urllib.request.Request(url, headers={
-            "User-Agent": f"c2c-cache/eval (+https://github.com/paul-j-reuer/cache-to-cache)"})
+            "User-Agent": "c2c-cache/eval (+https://github.com/drove318/cache-to-cache)"})
         with urllib.request.urlopen(request, timeout=timeout) as resp, open(tmp, "wb") as out:
             while True:
                 chunk = resp.read(1 << 16)
