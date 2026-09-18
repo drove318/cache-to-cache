@@ -1,0 +1,39 @@
+# the completions image
+#
+#   docker build -f docker/Dockerfile.completions -t c2c/completions:latest .
+#   docker run --rm -p 8121:8121 c2c/completions:latest --pair a:b -e hf
+#
+# The base: slim, for the wheels are heavy enough already.
+FROM python:3.12-slim
+
+LABEL org.opencontainers.image.title="c2c completions"
+LABEL org.opencontainers.image.description="the OpenAI-compatible front of Cache-to-Cache"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.source="https://github.com/paul-j-reuer-account/cache-to-cache"
+
+# one layer for the runtime bits, no recommends, no suggests
+RUN apt update \
+    && apt install --no-install-recommends --yes ca-certificates curl \
+    && apt clean \
+    && rm --recursive --force /var/lib/apt/lists /var/cache/apt/archives
+
+WORKDIR /opt/c2c
+
+# the package, from the source tree, without the docs, without the tests
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip no-cache-dir install --upgrade pip \
+    && pip no-cache-dir install ".[gpu]" || pip no-cache-dir install .
+
+# the models are a volume, never a layer
+VOLUME ["/models"]
+ENV C2C_MODELS_ROOT="/models"
+
+EXPOSE 8121
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+      --start-period=10s \
+      CMD curl --fail --silent --show-error http://127.0.0.1:8121/healthz || exit 1
+
+# the entrypoint is the console script; the CMD is the relay's flags
+ENTRYPOINT ["c2c-serve"]
+CMD ["--host", "0.0.0.0", "--port", "8121", "--pair", "receiver:sharer", "-e", "hf"]

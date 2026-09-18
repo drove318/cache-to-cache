@@ -1,0 +1,49 @@
+C2C-A2A(7)                 File Formats and Conventions            C2C-A2A(7)
+
+NAME
+       c2c-a2a - the agent-to-agent bridge, and the card it plays
+
+DESCRIPTION
+       The bridge turns one agent's task into another agent's answer,
+       and in between, the cache. The conventions:
+
+       The card
+              The agent card is published, by the protocol's design, at
+
+                  well-known/agent-card.json
+
+              under the public url of the bridge (--public-url). It
+              names the skills of the bridge — the c2c tools, and the
+              routes of the front — and the authentication of the house:
+              bearer, the key from C2C_API_KEY.
+
+       The task
+              A task is sent as a message; it is carried as a task, and
+              it ends as an artifact. States: submitted, working,
+              completed, failed — and, of the cache: fused.
+
+       The trust
+              The card is public; the tasks are not. The bridge
+              forwards to the front and stores nothing. The audience
+              of the card is the public url, and the public url is not
+              a directive from the peer.
+
+WIRE
+       JSON-RPC over HTTPS, the method names of the protocol, the
+       parameters of the message, and — between the agents — the
+       cache envelope of c2c-proxy(7), checked against the geometry it
+       declares (F-15).
+
+EXIT STATUS
+       0  the bridge crossed
+       1  the card, unreadable; the task, refused
+
+EXAMPLES
+       c2c-a2a --pair math-small:coder-small -e hf --port 8122 \
+              --public-url https://relay.example.com:8122
+
+SEE ALSO
+       c2c(1), c2c-serve(1), c2c-proxy(7), SECURITY.md in the source
+       of the distribution
+
+C2C-A2A(7)                    September 2026                       C2C-A2A(7)

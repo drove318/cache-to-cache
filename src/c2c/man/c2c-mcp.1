@@ -1,0 +1,62 @@
+C2C-MCP(1)                  Control Plane Manuals                  C2C-MCP(1)
+
+NAME
+       c2c-mcp - the model context protocol server of the cache-to-cache
+       house
+
+SYNOPSIS
+       c2c-mcp [-e ENGINE] [--transport stdio|http] [--host HOST]
+               [--port PORT] [--api-key KEY] [--verbose]
+
+DESCRIPTION
+       The server speaks JSON-RPC 2.0 — on stdio (the default, one line
+       per message), or over HTTP (POST /, one request, one answer). It
+       publishes the tools of the trade; the client calls the tools; the
+       server does not call the clients — the wire between models does
+       not ring the harness into loops.
+
+       The three tools, as the interface ships them:
+
+       c2c_register_pair
+              receiver, sharer (required); engine, weights_path (optional).
+              Declare a collaboration; returns the canonical pair id.
+
+       c2c_fuse
+              model, prompt (required). Fuse the pair's caches over the
+              prompt; the report returns the gates and the ranks — the
+              instrument panel of the collaboration, no answer generated.
+
+       c2c_ask
+              model, prompt (required); max_tokens, temperature (optional).
+              Ask the pair through the full pipeline: resolve, capture,
+              fuse, generate. Returns the answer text.
+
+       The protocol version advertised: 2025-06-18. Notifications are
+       acknowledged in silence, as the specification requires; unknown
+       methods answer with the standard JSON-RPC error objects.
+
+OPTIONS
+       -e, --engine ENGINE    engine adapter for auto-built models
+       --transport stdio      the default: stdin in, stdout out
+       --transport http       JSON-RPC over HTTP, on --host:--port
+       --host HOST            http only; default 127.0.0.1, and wisely so
+       --port PORT            http only; default 8789
+       --api-key KEY          http only; require Authorization: Bearer KEY
+       --verbose              report every request to stderr
+
+EXIT STATUS
+       0  the session, ended well
+       1  the transport, misbound (a port already answered, or no such host)
+
+EXAMPLES
+       The client, the standard input, the standard output::
+
+           {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "c2c_fuse", "arguments": {
+              "model": "c2c/math-small+coder-small",
+              "prompt": "what is two plus two?"}}}
+
+SEE ALSO
+       c2c(1), c2c-serve(1), c2c-proxy(7), c2c-zoo(5), c2c-engines(7)
+
+C2C-MCP(1)                    September 2026                       C2C-MCP(1)

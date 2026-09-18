@@ -1,0 +1,59 @@
+C2C.FUSER(5)                      C2C Manual                     C2C.FUSER(5)
+
+NAME
+    c2c.fuser — the cache fuser: the only trainable part
+
+DESCRIPTION
+    The fuser implements the fused-cache update of the paper, Eq. (3):
+
+        C_f[n] = C_n(X) + F_n( C_n(X), C^S_{G(n)}(X) )
+
+    and the decoding Eq. (4):
+
+        y_{i+1} = P( y_i | C_f(X) + C(Y_[0:i]) )
+
+    One fuser clone exists per mapped layer pair (nn.Module clones, nn.
+    Sequential, nn.ModuleList). Its pipeline, following Fig. 5:
+
+      cache -> concat -> [pre-projection] -> projection
+            -> dynamic weighting -> feature fusion -> x gate -> + -> fused
+
+    Modules:
+
+    Projection
+        Concatenation of the Receiver and the Sharer cache features
+        along the feature axis, a projection layer and a feature-fusion
+        layer, activation in between (gelu by default).
+
+    DynamicWeighting
+        Input-aware head modulation: statistics per attention head
+        (mean and max over the token axis) are pooled, passed through a
+        small modulation network, and the projected information is
+        reweighted per token/query, one weight per head. Beware the two
+        heads (see c2c.config(5), section HEADS).
+
+    Gate
+        A learnable per-layer scalar, soft-sampled with the
+        Gumbel-Sigmoid trick and annealed linearly, 1.0 -> 0.001 across
+        the training steps (FR-07); differentiable during training, hard
+        binary at inference. The gate makes the fusion selective and the
+        selection learnable.
+
+    RESIDUAL (FR-03): the fusion never destructively overwrites the
+    Receiver's cache. The ablation ordering of Table 8 - pure
+    projection 20.70, +Fuse 44.88, +Gate 47.95 - must be reproducible;
+    a build that cannot reproduce the ordering fails review.
+
+    C2C-C (App. A.1.3): the optional 3-layer-MLP pre-projection of the
+    Sharer cache into the Receiver's dimensionality before the
+    concatenation, selected via configuration, not a second binary.
+
+    BLEND (FR-08): a configurable fraction of the cache may be replaced
+    by fused entries; traversal former (front-to-back) or latter
+    (back-to-front). Above 50 % the accuracy must rise monotonically
+    (App. A.2.4, Fig. 11).
+
+SEE ALSO
+    c2c(1), c2c.config(5), c2c.engines(7), the paper, the tests.
+
+C2C 1.0.0                                                        C2C.FUSER(5)

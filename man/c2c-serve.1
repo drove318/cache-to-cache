@@ -1,0 +1,65 @@
+C2C-SERVE(1)                Control Plane Manuals               C2C-SERVE(1)
+
+NAME
+       c2c-serve - the OpenAI-compatible front of the cache-to-cache relay
+
+SYNOPSIS
+       c2c-serve [--host HOST] [--port PORT] [--certfile FILE]
+                 [--keyfile FILE] [--api-key KEY | C2C_API_KEY]
+                 [--pair RECEIVER[+SHARER]] [--engine ENGINE]
+                 [--config FILE] [--privacy] [--log-level LEVEL]
+                 [--fuser-weights PATH]
+
+DESCRIPTION
+       The front answers on a port, and fuses the cache of the sharer
+       into the state of the receiver before a single token is born.
+       It speaks the OpenAI wire protocol, the routes:
+
+       /v1/models            the models on the shelf, and the pairs
+       /v1/chat/completions  the chat, the fused completion, streamed
+       /v1/completions       the plain, the old completion
+       /healthz              the pulse, for the probes of orchestrators
+
+       The pair is named RECEIVER, or RECEIVER+SHARER, a name from the
+       registry of the --config file. The engine names the adapter:
+       hf, vllm, sglang, trtllm, llamacpp, mlx, tgx, ollama, reference.
+
+OPTIONS
+       --host HOST        the address to answer on; default 127.0.0.1,
+                          and wisely so, for it is a localhost
+       --port PORT        the port; default 8121
+       --certfile FILE    the certificate; with --keyfile, HTTPS
+       --keyfile FILE     the key; keep it secret, keep it readable
+       --api-key KEY      the key of the house; or C2C_API_KEY in the
+                          environment; absent, the door stands open
+       --privacy          no cache, no trace: the sharer's context is
+                          dropped, the receiver answers alone (F-17)
+       --config FILE      the ini of the served: [serve], [pair], [fuser]
+       --fuser-weights PATH
+                          the learned weights, from the zoo or from disk
+
+EXIT STATUS
+       0  the front served, and stopped, gently
+       1  the front could not bind, or the pair is not on the shelf
+       2  the usage, wrong
+
+EXAMPLES
+       c2c-serve --pair math-small:coder-small -e hf --port 8121 \
+                 --certfile certs/cert.pem --keyfile certs/key.pem
+
+       curl https://127.0.0.1:8121/v1/chat/completions \
+            -H "authorization: bearer $C2C_API_KEY" \
+            -d '{"model": "c2c/math-small+coder-small",
+                 "messages": [{"role": "user",
+                               "content": "two plus two?"}],
+                 "stream": true}'
+
+REPORTING FAULTS
+       The failure modes of the front are catalogued in c2c.failures
+       as F-9 (the wire, misformed), F-15 (the geometry, mismatched),
+       F-17 (the privacy, unhonoured). See c2c(1) and doctor(1).
+
+SEE ALSO
+       c2c(1), c2c-proxy(7), c2c-mcp(1), c2c-a2a(7), c2c.config(5)
+
+C2C-SERVE(1)                  September 2026                   C2C-SERVE(1)

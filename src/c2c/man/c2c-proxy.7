@@ -1,0 +1,49 @@
+C2C-PROXY(7)                File Format and Conventions           C2C-PROXY(7)
+
+NAME
+       c2c-proxy - the conventions of the relay, and the wire it rides
+
+DESCRIPTION
+       The proxy is the relay between the harness and the front. It
+       rides the OpenAI wire, and it keeps the following conventions:
+
+       Routes
+              /v1/ is the prefix of the stable. Everything under it is
+              as published; what is not published is not promised.
+
+       The pair in the model name
+              "model": "c2c/RECEIVER+SHARER" names the fusion. Without
+              the plus, the receiver speaks alone — the relay becomes a
+              plain proxy, and the wire carries text only.
+
+       The stream
+              With "stream": true the answer is carried in server-sent
+              events, one completion, a chunk, delta by delta, ending
+              with data: [DONE]. The token that arrives is the token of
+              the receiver, the cache of the sharer already fused.
+
+       The authentication
+              authorization: bearer KEY. The key is compared in
+              constant time. No key, no gate — but bind the host to
+              127.0.0.1 then, and count the cost.
+
+WIRE FORMAT OF THE CACHE ENVELOPE
+       The cache on the wire is a mapping::
+
+           {"receiver": NAME, "sharer": NAME, "revision": N,
+            "num_layers": N, "num_heads": N, "num_key_value_heads": N,
+            "head_size": N, "hidden_size": N,
+            "layers": [{"layer": N, "key": TENSOR, "value": TENSOR}]}
+
+       The geometry is checked against the manifest of the pair before
+       the tensor is trusted (F-15, the geometry, mismatched).
+
+ENVIRONMENT
+       C2C_PROXY_HOST, C2C_PROXY_PORT, C2C_API_KEY, C2C_PAIRS,
+       C2C_FUSE_ALWAYS — as in c2c.config(5), read once, at the start
+       of the relay.
+
+SEE ALSO
+       c2c(1), c2c-serve(1), c2c.config(5), c2c-engines(7)
+
+C2C-PROXY(7)                  September 2026                   C2C-PROXY(7)

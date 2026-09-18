@@ -1,0 +1,438 @@
+"""``c2c-mcp`` — the Model Context Protocol server (spec HL-2).
+
+A line-delimited JSON-RPC 2.0 server on stdio, speaking the MCP wire
+that MCP-native harnesses (Claude Code, Codex CLI, Oh My Pi, any MCP
+client) speak. It exposes three tools so that a harness can declare
+Sharer/Receiver pairs and request fused answers inside its own agent
+loop — **the harness still owns the loop** (HL-4):
+
+``c2c_register_pair``
+    Declare a collaboration: ``receiver`` and ``sharer`` model ids,
+    optionally with a trained fuser checkpoint (``weights_path``) and an
+    engine (``engine``). Returns the canonical pair id.
+
+``c2c_fuse``
+    Run one fusion of the pair's caches over a prompt and report the
+    FusionReport (gates, ranks, tokens) — the instrument panel of the
+    collaboration, no answer generated.
+
+``c2c_ask``
+    Ask the pair a question through the full pipeline: resolve, capture,
+    fuse, generate. Returns the answer text.
+
+Protocol version advertised: ``2025-06-18``. Unknown notifications are
+ignored as the specification requires; unknown requests answer with the
+standard JSON-RPC error objects. Run it as ``c2c-mcp`` on stdio, or
+``c2c-mcp --transport http`` to serve the tools over a port.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn, TCPServer
+
+from .. import __version__
+from .registry import default_hub
+
+__all__ = ["MCPServer", "main", "build_parser", "MCPRequestHandler",
+           "MCPHTTPServer", "PROTOCOL_VERSION", "TOOLS"]
+
+PROTOCOL_VERSION = "2025-06-18"
+
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
+
+
+def _tool(name: str, description: str, schema: dict) -> dict:
+    return {"name": name, "description": description, "inputSchema": schema}
+
+
+TOOLS = [
+    _tool("c2c_register_pair",
+          "Declare a Sharer/Receiver collaboration for cache-to-cache answers.",
+          {
+              "type": "object",
+              "properties": {
+                  "receiver": {"type": "string", "description": "receiver model id"},
+                  "sharer": {"type": "string", "description": "sharer model id"},
+                  "engine": {"type": "string",
+                            "description": "engine adapter for auto-built models",
+                            "default": "reference"},
+                  "weights_path": {"type": "string",
+                                  "description": "optional trained fuser checkpoint (.pt)"},
+              },
+              "required": ["receiver", "sharer"],
+          }),
+    _tool("c2c_fuse",
+          "Fuse the pair's caches over a prompt; report gates and ranks.",
+          {
+              "type": "object",
+              "properties": {
+                  "model": {"type": "string",
+                           "description": "the virtual pair id, e.g. c2c/a←b"},
+                  "prompt": {"type": "string", "description": "the prompt to fuse on"},
+              },
+              "required": ["model", "prompt"],
+          }),
+    _tool("c2c_ask",
+          "Ask the pair a question through the full cache-to-cache pipeline.",
+          {
+              "type": "object",
+              "properties": {
+                  "model": {"type": "string",
+                           "description": "the virtual model id, e.g. c2c/a←b"},
+                  "prompt": {"type": "string", "description": "the question"},
+                  "max_tokens": {"type": "integer", "minimum": 1, "default": 64},
+                  "temperature": {"type": "number", "minimum": 0.0, "default": 0.0},
+              },
+              "required": ["model", "prompt"],
+          }),
+]
+
+
+class MCPServer:
+    """The JSON-RPC 2.0 conversation, over stdio, one line per message.
+
+    Parameters
+    ----------
+    reader, writer:
+        Text streams; default ``sys.stdin`` / ``sys.stdout``. The console
+        scripts swap them for the tests; the diagnostics go to stderr.
+    hub:
+        The model hub consulted by the tools; the shared default otherwise.
+    """
+
+    def __init__(self, *, reader=None, writer=None, hub=None):
+        self.reader = reader if reader is not None else sys.stdin
+        self.writer = writer if writer is not None else sys.stdout
+        self.hub = hub if hub is not None else default_hub
+        self.running = False
+        self._handlers: dict[str, Callable[[dict], dict]] = {
+            "initialize": self._on_initialize,
+            "ping": self._on_ping,
+            "tools/list": self._on_tools_list,
+            "tools/call": self._on_tools_call,
+        }
+
+    # -- the transport ──────────────────────────────────────────────────────
+    def write(self, message: dict) -> None:
+        self.writer.write(json.dumps(message, ensure_ascii=False) + "\n")
+        self.writer.flush()
+
+    def log(self, message: str) -> None:
+        sys.stderr.write(f"[c2c-mcp] {message}\n")
+        sys.stderr.flush()
+
+    def serve_forever(self) -> None:
+        """Read line by line; answer request by request; ignore noise."""
+        self.running = True
+        while self.running:
+            line = self.reader.readline()
+            if not line:
+                break                                   # EOF: the client hung up
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError as exc:
+                self.write(self._error(None, PARSE_ERROR, f"parse error: {exc.msg}"))
+                continue
+            self.dispatch(message)
+
+    def respond(self, message: dict) -> dict | None:
+        """One JSON-RPC message in, the answer (or none) out, in both transports."""
+        container: dict[str, dict] = {}
+
+        def emit(reply: dict) -> None:
+            container["reply"] = reply
+
+        original, self.write = self.write, emit
+        try:
+            self.dispatch(message)
+        finally:
+            self.write = original
+        return container.get("reply")
+
+    def dispatch(self, message: dict) -> None:
+        method = message.get("method")
+        identifier = message.get("id")
+        is_notification = identifier is None and method is not None
+        if not isinstance(message, dict) or not isinstance(method, str):
+            if not is_notification:
+                self.write(self._error(identifier, INVALID_REQUEST,
+                                     "a JSON-RPC request must carry a method"))
+            return
+        if is_notification:                           # notifications: acknowledged
+            return                                       # ignored, as the spec says
+        handler = self._handlers.get(method)
+        if handler is None:
+            self.write(self._error(identifier, METHOD_NOT_FOUND,
+                                 f"method {method!r} is not known"))
+            return
+        try:
+            result = handler(message.get("params") or {})
+        except _BadParams as exc:
+            self.write(self._error(identifier, INVALID_PARAMS, str(exc)))
+            return
+        except Exception as exc:                        # noqa: report, do not crash
+            self.log(f"handler {method} raised {exc.__class__.__name__}: {exc}")
+            self.write(self._error(identifier, INTERNAL_ERROR, str(exc)))
+            return
+        self.write({"jsonrpc": "2.0", "id": identifier, "result": result})
+
+    # -- the lifecycle handlers ─────────────────────────────────────────────
+    def _on_initialize(self, params: dict) -> dict:
+        self.log(f"client protocol {params.get('protocolVersion', '?')}")
+        return {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {
+                "name": "c2c-mcp",
+                "version": __version__,
+                "instructions": ("Cache-to-Cache: fuse a Sharer's KV-cache into a "
+                               "Receiver's. Register a pair, ask it, inspect it."),
+            },
+        }
+
+    def _on_ping(self, params: dict) -> dict:
+        return {}
+
+    def _on_tools_list(self, params: dict) -> dict:
+        return {"tools": TOOLS}
+
+    def _on_tools_call(self, params: dict) -> dict:
+        name = params.get("name")
+        arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            raise _BadParams("arguments must be an object")
+        handler = getattr(self, f"_tool_{name}", None) if isinstance(name, str) else None
+        if handler is None:
+            raise _BadParams(f"unknown tool {name!r}")
+        try:
+            payload = handler(arguments)
+        except _BadParams:
+            raise
+        except Exception as exc:                        # tool errors are results
+            return {"content": [{"type": "text", "text": f"error: {exc}"}],
+                   "isError": True}
+        return {"content": [{"type": "text",
+                            "text": payload if isinstance(payload, str)
+                            else json.dumps(payload, ensure_ascii=False)}],
+               "isError": False}
+
+    # -- the three tools ────────────────────────────────────────────────────
+    def _tool_c2c_register_pair(self, args: dict) -> dict:
+        receiver = _require(args, "receiver")
+        sharer = _require(args, "sharer")
+        engine = args.get("engine")
+        if engine:
+            self.hub.set_engine(str(engine))
+        weights_path = args.get("weights_path")
+        fuser = None
+        if weights_path:
+            from .openai_proxy import _load_fuser_state
+            fuser = _load_fuser_state(str(weights_path))
+        pair = self.hub.register_pair(receiver=receiver, sharer=sharer, fuser=fuser)
+        return {"ok": True, "id": f"c2c/{pair.id}", "fused": pair.fused}
+
+    def _tool_c2c_fuse(self, args: dict) -> dict:
+        model = _require(args, "model")
+        prompt = _require(args, "prompt")
+        target = self.hub.resolve(model)
+        if target is None:
+            raise _BadParams(f"model {model!r} is not registered and cannot be built")
+        if target.relay or target.fuser is None:
+            raise _BadParams(f"model {model!r} is a relay pair; register a fuser first")
+        receiver, sharer, fuser = target.receiver, target.sharer, target.fuser
+        r_ids = list(receiver.encode(prompt))
+        s_ids = list(sharer.encode(prompt))
+        cache_r = receiver.capture(r_ids)
+        cache_s = sharer.capture(s_ids)
+        token_mapping = None
+        if len(r_ids) != len(s_ids):
+            from ..align.tokens import TokenAligner
+            token_mapping = TokenAligner(receiver, sharer).select_rows(r_ids)
+        fused = fuser(cache_r, cache_s, token_mapping=token_mapping)
+        report = fuser.report(num_tokens=len(r_ids)) if hasattr(fuser, "report") else None
+        return {
+            "layers": len(fused),
+            "tokens": fused.num_tokens,
+            "gate_values": list(report.gate_values) if report else [],
+            "gate_open_ratio": report.gate_open_ratio if report else None,
+            "effective_rank": report.effective_rank if report else {},
+        }
+
+    def _tool_c2c_ask(self, args: dict) -> dict:
+        model = _require(args, "model")
+        prompt = _require(args, "prompt")
+        max_tokens = int(args.get("max_tokens") or 64)
+        temperature = float(args.get("temperature") or 0.0)
+        from .openai_proxy import ChatPipeline
+        pipeline = ChatPipeline(hub=self.hub)
+        result = pipeline.complete(model=model, prompt_text=prompt,
+                                max_new_tokens=max_tokens, temperature=temperature,
+                                tools=None, stop=None)
+        return {"answer": result["answer"], "used_cache": result["used_cache"],
+               "usage": {"prompt_tokens": result["prompt_tokens"],
+                       "completion_tokens": result["completion_tokens"]}}
+
+    # -- JSON-RPC error objects, per the canonical table ───────────────────
+    @staticmethod
+    def _error(identifier, code: int, message: str) -> dict:
+        return {"jsonrpc": "2.0", "id": identifier,
+               "error": {"code": code, "message": message}}
+
+
+class _BadParams(ValueError):
+    """Raised by the tools when the arguments do not make sense."""
+
+
+def _require(args: dict, key: str) -> str:
+    value = args.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise _BadParams(f"missing or empty string argument {key!r}")
+    return value.strip()
+
+
+def build_parser(prog: str = "c2c-mcp") -> argparse.ArgumentParser:
+    """The parser of the server: the transport, the port, the key."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="MCP server of the cache-to-cache house: the tools of the "
+                    "trade over JSON-RPC (spec HL-2).",
+        epilog="the tools are the verbs; the caches are the nouns; the loop stays the client's.")
+    parser.add_argument("-e", "--engine", default=None,
+                        help="engine adapter for auto-built models (default 'reference')")
+    parser.add_argument("--transport", choices=("stdio", "http"), default="stdio",
+                        help="the wire beneath: stdio (the default) or http")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="http only: interface to bind (default the loopback)")
+    parser.add_argument("--port", type=int, default=8789,
+                        help="http only: port to listen on (default 8789)")
+    parser.add_argument("--api-key", default=None,
+                        help="http only: when set, require 'Authorization: Bearer <key>'")
+    parser.add_argument("--verbose", action="store_true",
+                        help="report every request to stderr")
+    return parser
+
+
+class MCPRequestHandler(BaseHTTPRequestHandler):
+    """JSON-RPC over HTTP: one request, one answer, the same core as stdio."""
+
+    server_version = f"c2c-mcp/{__version__}"
+    protocol_version = "HTTP/1.1"
+
+    server_core: MCPServer | None = None               # bound by main()
+    api_key: str | None = None
+    verbose = False
+
+    def log_message(self, fmt: str, *args) -> None:
+        if self.verbose:
+            message = fmt % args if args else fmt
+            sys.stderr.write(f"[c2c-mcp] {message}\n")
+
+    def log_error(self, fmt: str, *args) -> None:
+        self.log_message("error: " + fmt, *args)
+
+    def _json(self, payload: dict, status: int = HTTPStatus.OK) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+            self.wfile.flush()
+
+    def _authorized(self) -> bool:
+        if not self.api_key:
+            return True                                     # the door, open by design
+        header = self.headers.get("Authorization", "") or ""
+        scheme, _, token = header.partition(" ")
+        from .openai_proxy import constant_time_equals
+        return scheme.lower() == "bearer" and constant_time_equals(token, self.api_key)
+
+    def do_GET(self) -> None:                              # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path in ("/healthz", "/"):
+            self._json({"status": "ok", "service": "c2c-mcp", "version": __version__,
+                        "protocol": PROTOCOL_VERSION,
+                        "tools": [tool["name"] for tool in TOOLS]})
+            return
+        self._json({"error": {"message": f"no such path: {path!r}"}}, HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:                             # noqa: N802
+        if not self._authorized():
+            self._json({"jsonrpc": "2.0", "id": None, "error": {
+                "code": -32001, "message": "Incorrect API key provided."}},
+                HTTPStatus.UNAUTHORIZED)
+            return
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b""
+        try:
+            message = json.loads(raw.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json({"jsonrpc": "2.0", "id": None,
+                        "error": {"code": PARSE_ERROR, "message": "parse error"}}
+                        )
+            return
+        if not isinstance(message, dict):
+            self._json({"jsonrpc": "2.0", "id": None,
+                        "error": {"code": INVALID_REQUEST, "message": "a JSON object is required"}})
+            return
+        reply = self.server_core.respond(message) if self.server_core else None
+        if reply is None:                                  # the notification, acknowledged
+            self.send_response(HTTPStatus.NO_CONTENT)         # in silence, as per the spec
+            self.end_headers()
+            return
+        self._json(reply)
+
+
+class MCPHTTPServer(ThreadingMixIn, TCPServer):
+    """The stdio server's twin, on a port."""
+
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=None) -> int:
+    """Console-script entry point: stdio by default, a port on request."""
+    args = build_parser("c2c-mcp").parse_args(argv)
+    if args.engine:
+        default_hub.set_engine(args.engine)
+    server = MCPServer(reader=reader, writer=writer, hub=hub)
+    if args.transport == "stdio":
+        server.serve_forever()
+        return 0
+    from ..utils.console import banner
+    MCPRequestHandler.server_core = server
+    MCPRequestHandler.api_key = args.api_key
+    MCPRequestHandler.verbose = args.verbose
+    try:
+        httpd = MCPHTTPServer((args.host, args.port), MCPRequestHandler)
+    except OSError as exc:
+        sys.stderr.write(f"c2c-mcp: cannot bind {args.host}:{args.port}: {exc}\n")
+        return 1
+    sys.stderr.write(banner("mcp", __version__) + "\n")
+    sys.stderr.write(f"  listening on http://{args.host}:{args.port} "
+                     "(JSON-RPC over POST /), or the tools of the trade\n")
+    sys.stderr.write("  the tools are the verbs; the caches are the nouns; the loop stays the client's.\n")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

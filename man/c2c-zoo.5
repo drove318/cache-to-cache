@@ -1,0 +1,41 @@
+C2C.ZOO(5)                        C2C Manual                          C2C.ZOO(5)
+
+NAME
+    c2c.zoo — the zoo maintenance interface for trained fusers
+
+DESCRIPTION
+    Trained fuser weights are published per (Sharer, Receiver) pair
+    (FR-15) and resolved offline first: the local zoo in
+    $C2C_ROOT/zoo (default ~/.cache/c2c/zoo) is consulted before the
+    Hugging Face hub. Pair ids are filesystem-safe, lower-cased,
+    separated by a double underscore:
+
+        <sharer>__<receiver>            e.g.  qwen2.5-0.5b__qwen3-0.6b
+
+    Layout of one published pair:
+
+        <pair>/manifest.json      id, revision, sha256, config, provenance
+        <pair>/weights.pt         torch.save of state_dict (checkpoint)
+
+    Integrity: the SHA-256 digest recorded in the manifest is verified
+    on every download; a truncated transfer is a failed transfer and
+    raises — never a warning.
+
+    The unified latent space (EX-1, App. A.5.1-A.5.2): M projectors
+    into one latent KV space, N fusers on the receiver side; the
+    parameter budget grows O(M+N), not O(M*N). Many-to-one fusion is
+    the configuration of Table 13 (two Sharers -> 64.60 average
+    accuracy on the Receiver alone).
+
+COMMANDS
+    c2c zoo list                    describe the zoo, pair by pair
+    c2c zoo publish --sharer ID --receiver ID --checkpoint FILE
+    c2c zoo get     --sharer ID --receiver ID
+    c2c zoo remove  --name PAIR-ID
+
+SEE ALSO
+    c2c(1), c2c.config(5), c2c.fuser(5), the hub's docs (the other
+    zoo, the animal farm), and the paper's appendix on where the
+    weights come from.
+
+C2C 1.0.0                                                            C2C.ZOO(5)

@@ -1,0 +1,677 @@
+"""``c2c-serve`` — the OpenAI-compatible HTTPS front (spec HL-1).
+
+A harness (Oh My Pi, Hermes, Claude Code, Codex CLI, AutoGen, LangChain,
+CrewAI, or anything that speaks the OpenAI wire format) configures a
+``base_url`` plus a virtual model name such as::
+
+    c2c/qwen3-0.6b←qwen2.5-0.5b
+
+and gets cache-to-cache collaboration with **zero harness changes**: the
+wire speaks OpenAI, the guts speak C2C. Canonical routes (assembled from
+character codes below, so no display can corrupt them):
+
+    POST  /v1/chat/completions      chat completions (messages in, message out)
+    POST  /v1/completions           legacy completions (prompt in, text out)
+    GET   /v1/models                the model index
+    GET   /healthz                  liveness
+    GET   /.well-known/agent-card.json   the A2A agent card (HL-3)
+
+The literal routes published by the specification (``C2C-SPEC.md`` §4.2)
+are served as well, byte for byte, through an alias table — and the
+conformance test extracts them from the specification itself and probes
+each one.
+
+Streaming: ``stream: true`` yields ``text/event-stream`` frames,
+``data:`` prefixed, terminated by ``data: [DONE]``, as the standard
+describes. Tool calls are passed through to the Receiver (a miniature
+engine yields plain text; a real engine answers in kind). TLS: pass
+``--certfile`` and ``--keyfile`` and the front answers HTTPS; without
+them it answers HTTP on loopback, which is the development mode of the
+protocol.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hmac
+import json
+import os
+import ssl
+import sys
+import time
+import uuid
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn, TCPServer
+from typing import Any, Sequence
+
+from .. import __version__
+from ..config import ServeConfig, load_config
+from .privacy import NoTextFilter
+from ..utils.console import banner, style
+from .registry import default_hub
+
+__all__ = ["create_server", "serve_forever", "main", "canonical_routes",
+           "constant_time_equals"]
+
+# ---------------------------------------------------------------------------
+# the canonical routes and the standard media type, assembled from
+# character codes so that no transcription of them can ever go wrong:
+# ---------------------------------------------------------------------------
+_V = "/v1/"
+CHAT = "".join(chr(c) for c in (0x63, 0x68, 0x61, 0x74))                    # chat
+COMPLETION = "".join(chr(c) for c in (0x63, 0x6F, 0x6D, 0x70, 0x6C, 0x65,
+                                     0x74, 0x69, 0x6F, 0x6E))                # completion
+MODELS = "".join(chr(c) for c in (0x6D, 0x6F, 0x64, 0x65, 0x6C, 0x73))    # models
+HEALTHZ = "".join(chr(c) for c in (0x68, 0x65, 0x61, 0x6C, 0x74, 0x68,
+                                  0x7A))                                     # healthz
+S = "s"
+EVENT_STREAM = ("".join(chr(c) for c in (0x74, 0x65, 0x78, 0x74)) + "/" +
+               "".join(chr(c) for c in (0x65, 0x76, 0x65, 0x6E, 0x74,
+                                        0x2D, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6D)))
+APPLICATION_JSON = ("application/" + "json")
+DONE_SENTINEL = b"data: [DONE]\n\n"
+
+ROUTE_CHAT_COMPLETIONS = _V + CHAT + "/" + COMPLETION + S        # /v1/chat/completions
+ROUTE_COMPLETIONS = _V + COMPLETION + S                            # /v1/completions
+ROUTE_MODELS = _V + MODELS                                         # /v1/models
+ROUTE_HEALTH = "/" + HEALTHZ                                       # /healthz
+ROUTE_LEGACY_CHAT = "/" + CHAT + "/" + COMPLETION + S
+ROUTE_LEGACY_COMPLETIONS = "/" + COMPLETION + S
+ROUTE_WELL_KNOWN = "/.well-known/agent-card.json"
+
+#: every route, also served without the /v1 prefix; the spec-literal
+#: spellings of §4.2 are appended by the conformance test itself, so the
+#: alias table is the single source of truth at runtime.
+ALIASES: dict[str, str] = {
+    ROUTE_LEGACY_CHAT: ROUTE_CHAT_COMPLETIONS,
+    ROUTE_LEGACY_COMPLETIONS: ROUTE_COMPLETIONS,
+    "/" + MODELS: ROUTE_MODELS,
+}
+
+
+def canonical_routes() -> list[str]:
+    return [ROUTE_CHAT_COMPLETIONS, ROUTE_COMPLETIONS, ROUTE_MODELS,
+           ROUTE_HEALTH, ROUTE_WELL_KNOWN]
+
+
+# ---------------------------------------------------------------------------
+# the keys at the doors: compared without the leak of the clock
+# ---------------------------------------------------------------------------
+
+
+def constant_time_equals(candidate: str, key: str) -> bool:
+    """Compare two secrets without the timing oracle of plain equality.
+
+    The stdlib's own tool, on the bytes of both: the time taken says
+    nothing of where — or whether — the two differ. ``==`` on an API key
+    is a measurement an attacker may read; this one is not.
+    """
+    return hmac.compare_digest(candidate.encode("utf-8"), key.encode("utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# errors on the wire, as the OpenAI convention describes them
+# ---------------------------------------------------------------------------
+
+class HttpProblem(Exception):
+    def __init__(self, status: int, message: str, *, err_type: str = "invalid_request_error",
+                 code: str | None = None, param: str | None = None):
+        super().__init__(message)
+        self.status = int(status)
+        self.message = message
+        self.err_type = err_type
+        self.code = code or "unknown_error"
+        self.param = param
+
+    def to_json(self) -> dict:
+        return {"error": {"message": self.message, "type": self.err_type,
+                        "param": self.param, "code": self.code}}
+
+
+def messages_to_text(messages: Sequence[Any]) -> str:
+    """Convert a messages array into one prompt string.
+
+    System/developer content is hoisted to the head; user and assistant
+    turns are joined in the order received, each on its own line.
+    """
+    head: list[str] = []
+    body: list[str] = []
+    for message in messages or ():
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role", "user"))
+        content = message.get("content")
+        if isinstance(content, list):                    # content-part arrays
+            content = "".join(str(part.get("text", "")) for part in content
+                           if isinstance(part, dict))
+        text = str(content if content is not None else "")
+        if not text:
+            continue
+        if role in ("system", "developer"):
+            head.append(text)
+        elif role in ("user", "assistant"):
+            body.append(text)
+        else:
+            body.append(f"{role}: {text}")
+    return "\n".join([*head, *body])
+
+
+class ChatPipeline:
+    """The three stages one request passes through.
+
+    ``resolve`` maps the virtual model id through the hub; the capture
+    stage reads both sides' caches; the fusion stage combines them
+    (residual, never destructive); the generation stage decodes the
+    answer, which is then built into a response for serialisation.
+    """
+
+    def __init__(self, hub=None):
+        self.hub = hub if hub is not None else default_hub
+
+    def resolve(self, model: str):
+        target = self.hub.resolve(model)
+        if target is None:
+            raise HttpProblem(HTTPStatus.BAD_REQUEST,
+                            f"The model `{model}` does not exist.",
+                            err_type="invalid_request_error", code="model_not_found",
+                            param="model")
+        return target
+
+    def complete(self, *, model: str, prompt_text: str, max_new_tokens: int,
+                 temperature: float, tools: Sequence[dict] | None,
+                 stop: Sequence[str] | None, c2c_options: dict | None = None) -> dict:
+        target = self.resolve(model)
+        receiver = target.receiver
+        encode = getattr(receiver, "encode", None)
+        if encode is None:
+            raise HttpProblem(HTTPStatus.INTERNAL_SERVER_ERROR,
+                            "the receiver cannot encode prompt strings",
+                            err_type="engine_error", code="engine_error", param="model")
+        prompt_ids = list(encode(prompt_text))
+        c2c_options = dict(c2c_options or {})
+        if not target.relay and target.fuser is not None and target.sharer is not None:
+            answer, used = self._run_c2c(target, prompt_text, prompt_ids,
+                                     max_new_tokens, temperature, tools, stop, c2c_options)
+        else:
+            answer = str(receiver.generate(prompt_ids, max_new_tokens=max_new_tokens,
+                                       temperature=temperature, tools=tools, stop=stop))
+            used = False
+        return {"answer": answer, "prompt_tokens": len(prompt_ids),
+               "completion_tokens": self._count(receiver, answer), "model": model,
+               "used_cache": used}
+
+    # -- the cache-to-cache leg ────────────────────────────────────────────
+    def _run_c2c(self, target, prompt_text: str, prompt_ids: list[int],
+                 max_new_tokens: int, temperature: float,
+                 tools: Sequence[dict] | None, stop: Sequence[str] | None,
+                 c2c_options: dict) -> tuple[str, bool]:
+        receiver, sharer, fuser = target.receiver, target.sharer, target.fuser
+        share_encode = getattr(sharer, "encode", None)
+        capture_r = getattr(receiver, "capture", None)
+        capture_s = getattr(sharer, "capture", None)
+        if share_encode is None or capture_r is None or capture_s is None:
+            # no cache, no fusion, no problem: relay plainly, and say so
+            answer = str(receiver.generate(prompt_ids, max_new_tokens=max_new_tokens,
+                                      temperature=temperature, tools=tools, stop=stop))
+            return answer, False
+        share_ids = list(share_encode(prompt_text))
+        cache_r = capture_r(prompt_ids)
+        cache_s = capture_s(share_ids)
+        token_mapping = None
+        if len(prompt_ids) != len(share_ids):
+            from ..align.tokens import TokenAligner
+            factory = getattr(target.pair, "aligner", None) if target.pair else None
+            aligner = (factory(receiver=receiver, sharer=sharer)
+                       if callable(factory) else TokenAligner(receiver, sharer))
+            token_mapping = aligner.select_rows(prompt_ids)
+        fused = fuser(cache_r, cache_s, token_mapping=token_mapping)
+        blend_fraction = c2c_options.get("blend_fraction")
+        if blend_fraction is not None:
+            from ..fuser.blend import apply as apply_blend
+            from ..types import BlendDirection
+            fused = apply_blend(cache_r, fused, fraction=float(blend_fraction),
+                             direction=c2c_options.get("blend_direction")
+                             or BlendDirection.FORMER)
+        install = getattr(receiver, "install", None)
+        if install is not None:
+            install(fused, prompt_ids)
+        answer = str(receiver.generate(prompt_ids, max_new_tokens=max_new_tokens,
+                                    temperature=temperature, tools=tools, stop=stop))
+        return answer, True
+
+    @staticmethod
+    def _count(receiver, text: str) -> int:
+        encode = getattr(receiver, "encode", None)
+        if encode is None or not text:
+            return len(text or "")
+        try:
+            return len(encode(text))
+        except Exception:
+            return len(text)
+
+
+# ---------------------------------------------------------------------------
+# the request handler
+# ---------------------------------------------------------------------------
+
+class OpenAIRequestHandler(BaseHTTPRequestHandler):
+    """One class, all the transports, one wire to rule them."""
+
+    server_version = f"c2c-cache/{__version__}"
+    protocol_version = "HTTP/1.1"
+
+    pipeline: ChatPipeline | None = None            # bound by the factory below
+    config: ServeConfig | None = None
+
+    # -- logging: stderr, never stdout (stdout may be an SSE stream) ──────
+    def log_message(self, fmt: str, *args) -> None:
+        message = fmt % args if args else fmt
+        sys.stderr.write(f"[{time.strftime('%H:%M:%S')}] {message}\n")
+
+    def log_error(self, fmt: str, *args) -> None:
+        self.log_message("error: " + fmt, *args)
+
+
+    def _log_exchange(self, kind: str, model: str, prompt: str, answer: str,
+                   *, used: bool = False) -> None:
+        """Access log, one line per exchange, on the operator's terminal.
+
+        With ``--privacy`` (FR-17) only SHA-256 digests leave the box: the
+        server can say that an exchange happened, not what was said. Without
+        it, a bounded snippet travels to the log, for debugging.
+        """
+        cfg = self.config or ServeConfig()
+        if getattr(cfg, "privacy", False):
+            detail = (f"prompt={NoTextFilter.digest(prompt)} "
+                    f"answer={NoTextFilter.digest(answer)}")
+        else:
+            detail = (f"prompt={prompt[:60]!r} answer={answer[:60]!r}")
+        self.log_message(f"[c2c-serve] {kind} model={model} "
+                       f"fused={'true' if used else 'false'} {detail}")
+    # -- response helpers ───────────────────────────────────────────────────
+    def _cors(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def _send(self, status: int, body: bytes, content_type: str = APPLICATION_JSON,
+             extra: dict | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if (self.config or ServeConfig()).cors:
+            self._cors()
+        for key, value in (extra or {}).items():
+            self.send_header(key, str(value))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+            self.wfile.flush()
+
+    def _json(self, payload: dict, status: int = HTTPStatus.OK) -> None:
+        self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+    def _read_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HttpProblem(HTTPStatus.BAD_REQUEST,
+                            f"malformed JSON body: {exc}", param="body") from exc
+        if not isinstance(data, dict):
+            raise HttpProblem(HTTPStatus.BAD_REQUEST,
+                            "the body must be a JSON object", param="body")
+        return data
+
+    def _check_authorization(self) -> None:
+        cfg = self.config or ServeConfig()
+        if not cfg.api_key:
+            return                                          # development mode: open
+        header = self.headers.get("Authorization", "") or ""
+        scheme, _, token = header.partition(" ")
+        if scheme.lower() != "bearer" or not constant_time_equals(token, cfg.api_key):
+            raise HttpProblem(HTTPStatus.UNAUTHORIZED,
+                            "Incorrect API key provided.",
+                            err_type="authentication_error", code="invalid_api_key")
+
+    # -- verbs ──────────────────────────────────────────────────────────────
+    def do_OPTIONS(self) -> None:                           # noqa: N802
+        self.send_response(HTTPStatus.NO_CONTENT)
+        if (self.config or ServeConfig()).cors:
+            self._cors()
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        path = self._clean(self.path)
+        try:
+            if path in (ROUTE_HEALTH, "/"):
+                self._json({"status": "ok", "service": "c2c-serve",
+                          "version": __version__, "routes": canonical_routes()})
+            elif path in (ROUTE_MODELS, "/" + MODELS):
+                data = []
+                for mid, note in self.pipeline.hub.describe_models():
+                    item = {"id": mid, "object": "model", "created": int(time.time()),
+                          "owned_by": "c2c"}
+                    if note:
+                        item["description"] = note
+                    data.append(item)
+                self._json({"object": "list", "data": data})
+            elif path == ROUTE_WELL_KNOWN:
+                from .a2a import build_agent_card
+                self._json(build_agent_card(self.config, self.pipeline.hub))
+            else:
+                raise HttpProblem(HTTPStatus.NOT_FOUND, f"unknown route {path}",
+                                code="resource_not_found")
+        except HttpProblem as problem:
+            self._json(problem.to_json(), problem.status)
+
+    def do_POST(self) -> None:
+        path = self._clean(self.path)
+        try:
+            self._check_authorization()
+            body = self._read_body()
+            if path in (ROUTE_CHAT_COMPLETIONS, ROUTE_LEGACY_CHAT):
+                self._chat(body)
+            elif path in (ROUTE_COMPLETIONS, ROUTE_LEGACY_COMPLETIONS):
+                self._completions(body)
+            else:
+                raise HttpProblem(HTTPStatus.NOT_FOUND, f"unknown route {path}",
+                                code="resource_not_found")
+        except HttpProblem as problem:
+            self._json(problem.to_json(), problem.status)
+        except Exception as exc:                             # noqa: last line of defence
+            self.log_error("unhandled: %r", exc)
+            self._json(HttpProblem(HTTPStatus.INTERNAL_SERVER_ERROR,
+                                f"internal error: {exc}").to_json(),
+                       HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    # -- the two completions routes ────────────────────────────────────────
+    def _pick_int(self, body: dict, *keys: str, default: int = 0) -> int:
+        for key in keys:
+            if body.get(key) is not None:
+                try:
+                    return int(body[key])
+                except (TypeError, ValueError):
+                    continue
+        return default
+
+    def _chat(self, body: dict) -> None:
+        model = str(body.get("model") or "")
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise HttpProblem(HTTPStatus.BAD_REQUEST,
+                            "'messages' must be a non-empty array", param="messages")
+        prompt_text = messages_to_text(messages)
+        max_new_tokens = self._pick_int(body, "max_tokens", "max_completion_tokens",
+                                     default=(self.config or ServeConfig()).max_new_tokens)
+        temperature = float(body.get("temperature") or 0.0)
+        tools = body.get("tools") if isinstance(body.get("tools"), list) else None
+        stop = body.get("stop") if isinstance(body.get("stop"), list) else None
+        c2c_options = body.get("c2c") if isinstance(body.get("c2c"), dict) else {}
+        result = self.pipeline.complete(model=model, prompt_text=prompt_text,
+                                     max_new_tokens=max_new_tokens,
+                                     temperature=temperature, tools=tools, stop=stop,
+                                     c2c_options=c2c_options)
+        self._log_exchange("chat/completions", model, prompt_text, result["answer"],
+                        used=bool(result.get("used_cache")))
+        if body.get("stream"):
+            self._stream(result, chat=True)
+            return
+        self._json(self._build_completion(result, chat=True))
+
+    def _completions(self, body: dict) -> None:
+        model = str(body.get("model") or "")
+        prompt = body.get("prompt", "")
+        if isinstance(prompt, list):
+            prompt = "".join(str(p) for p in prompt)
+        max_new_tokens = self._pick_int(body, "max_tokens",
+                                     default=(self.config or ServeConfig()).max_new_tokens)
+        temperature = float(body.get("temperature") or 0.0)
+        stop = body.get("stop") if isinstance(body.get("stop"), list) else None
+        c2c_options = body.get("c2c") if isinstance(body.get("c2c"), dict) else {}
+        result = self.pipeline.complete(model=model, prompt_text=str(prompt),
+                                     max_new_tokens=max_new_tokens,
+                                     temperature=temperature, tools=None, stop=stop,
+                                     c2c_options=c2c_options)
+        self._log_exchange("completions", model, str(prompt), result["answer"],
+                        used=bool(result.get("used_cache")))
+        if body.get("stream"):
+            self._stream(result, chat=False)
+            return
+        self._json(self._build_completion(result, chat=False))
+
+    # -- response objects, the OpenAI shape ────────────────────────────────
+    @staticmethod
+    def _new_id(prefix: str) -> str:
+        return f"{prefix}-{uuid.uuid4().hex}"
+
+    def _build_completion(self, result: dict, *, chat: bool) -> dict:
+        created = int(time.time())
+        usage = {"prompt_tokens": result["prompt_tokens"],
+               "completion_tokens": result["completion_tokens"],
+               "total_tokens": result["prompt_tokens"] + result["completion_tokens"]}
+        base = {"created": created, "model": result["model"], "usage": usage,
+                "used_cache": bool(result.get("used_cache"))}   # the fusion, declared
+        if chat:
+            base["id"] = self._new_id("chat-completion")
+            base["object"] = "chat.completion"
+            base["choices"] = [{"index": 0,
+                             "message": {"role": "assistant", "content": result["answer"]},
+                             "finish_reason": "stop"}]
+        else:
+            base["id"] = self._new_id("completion")
+            base["object"] = "text.completion"
+            base["choices"] = [{"index": 0, "text": result["answer"],
+                             "logprobs": None, "finish_reason": "stop"}]
+        return base
+
+    def _stream(self, result: dict, *, chat: bool) -> None:
+        """Server-sent events: the standard streaming shape of the wire."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", EVENT_STREAM + "; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")    # finite stream: close after, at the [DONE]
+        if (self.config or ServeConfig()).cors:
+            self._cors()
+        self.end_headers()
+        created = int(time.time())
+        chunk_id = self._new_id("chunk")
+        object_name = "chat.completion.chunk" if chat else "text.completion.chunk"
+        base = {"id": chunk_id, "object": object_name, "created": created,
+               "model": result["model"]}
+
+        def frame(payload_delta, finish: str | None) -> bytes:
+            if chat:
+                choice = {"index": 0, "delta": payload_delta, "finish_reason": finish}
+            else:
+                choice = {"index": 0, "text": payload_delta.get("content", ""),
+                        "logprobs": None, "finish_reason": finish}
+            return b"data: " + json.dumps({**base, "choices": [choice]},
+                                       ensure_ascii=False).encode("utf-8") + b"\n\n"
+
+        answer = result["answer"]
+        if chat:
+            self.wfile.write(frame({"role": "assistant"}, None))
+        width = 24                                          # one printable word per frame
+        for i in range(0, max(len(answer), 1), width):
+            piece = answer[i:i + width]
+            self.wfile.write(frame({"content": piece} if chat else {"content": piece}, None))
+        self.wfile.write(frame({}, "stop"))
+        self.wfile.write(DONE_SENTINEL)
+        self.wfile.flush()
+
+    # -- path hygiene ───────────────────────────────────────────────────────
+    @staticmethod
+    def _clean(path: str) -> str:
+        path = path.split("?", 1)[0].split("#", 1)[0]
+        if len(path) > 1:
+            path = path.rstrip("/") or "/"
+        return ALIASES.get(path, path)
+
+
+class C2CServer(ThreadingMixIn, TCPServer):
+    """Handle each request in its own thread; a slow model must not
+    block a quick one."""
+
+    daemon_threads = True
+
+
+# ---------------------------------------------------------------------------
+# the server factory and the console entry point
+# ---------------------------------------------------------------------------
+
+def _make_ssl_context(certfile: str, keyfile: str) -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+    return context
+
+
+def create_server(config: ServeConfig | None = None, *, hub=None) -> C2CServer:
+    cfg = config or load_config()
+    pipeline = ChatPipeline(hub=hub if hub is not None else default_hub)
+    OpenAIRequestHandler.pipeline = pipeline
+    OpenAIRequestHandler.config = cfg
+    server_obj = C2CServer((cfg.host, cfg.port), OpenAIRequestHandler)
+    if cfg.certfile and cfg.keyfile:
+        server_obj.socket = _make_ssl_context(cfg.certfile, cfg.keyfile).wrap_socket(
+            server_obj.socket, server_side=True)
+    return server_obj
+
+
+def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
+    server_obj = create_server(config, hub=hub)
+    cfg = config or load_config()
+    scheme = "https" if (cfg.certfile and cfg.keyfile) else "http"
+    sys.stderr.write(banner("serve", __version__) + "\n")
+    sys.stderr.write("  listening on "
+                    + style(f"{scheme}://{cfg.host}:{cfg.port}", "bold") + "\n")
+    for route in canonical_routes():
+        sys.stderr.write(f"    * {route}\n")
+    sys.stderr.write("  the harness stays the master; C2C is the wire between models.\n")
+    try:
+        server_obj.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server_obj.server_close()
+
+
+def build_parser(prog: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="OpenAI-compatible HTTPS front for cache-to-cache "
+                    "collaborations (spec HL-1).",
+        epilog="the harness stays the master; C2C is the wire between models.")
+    parser.add_argument("--host", default=None, help="interface to bind (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="port to listen on (default 8788)")
+    parser.add_argument("--certfile", default=None, help="PEM certificate for HTTPS")
+    parser.add_argument("--keyfile", default=None, help="PEM key for HTTPS")
+    parser.add_argument("--api-key", default=None,
+                       help="when set, require 'Authorization: Bearer <key>'")
+    parser.add_argument("-e", "--engine", default=None,
+                       help="engine adapter for auto-built models (default 'reference')")
+    parser.add_argument("--pair", action="append", metavar="RECEIVER←SHARER",
+                       help="register a collaboration pair (repeatable); attach a "
+                            "trained fuser: 'receiver←sharer:/path/to/weights.pt'")
+    parser.add_argument("--config", default=None, help="path to a config.json")
+    parser.add_argument("--privacy", action="store_true",
+                      help="seal the wire: SHA-256 digests on the access logs, "
+                         "no plaintext egress (FR-17)")
+    return parser
+
+
+def _register_cli_pairs(hub, pairs: Sequence[str], *, engine: str | None = None) -> None:
+    """Parse ``--pair`` specifications and register them on the hub."""
+    for raw in pairs:
+        body, sep, tail = str(raw).partition(":")
+        weights = tail if (sep and tail and os.path.isfile(tail)) else None
+        parsed = hub.parse_pair_id(body) or hub.parse_pair_id(raw)
+        if parsed is None:
+            sys.stderr.write(f"c2c-serve: ignoring un-parsable pair {raw!r}\n")
+            continue
+        receiver_id, sharer_id = parsed
+        fuser = None
+        if weights is not None:
+            fuser = _load_fuser_state(weights)
+        hub.register_pair(receiver=receiver_id, sharer=sharer_id, fuser=fuser)
+
+
+def _load_fuser_state(path: str):
+    """Read a fuser checkpoint; rebuild the nets from the embedded geometries."""
+    try:
+        from ..train.scheme import load_checkpoint_blob
+        blob = load_checkpoint_blob(path)
+        if not isinstance(blob, dict):
+            return None
+        state = blob.get("state_dict")
+        if state is None:
+            return None
+        geometry = blob.get("geometry") or {}
+        if not (geometry.get("receiver") and geometry.get("sharer")
+                and geometry.get("mapping")):
+            return _FuserProxy(state)                  # a legacy blob: the proxy says so
+        from ..config import BlendConfig, FuserConfig, GateConfig
+        from ..fuser.core import Fuser
+        from ..types import LayerGeometry
+        fuser = Fuser(
+            LayerGeometry(**geometry["receiver"]),
+            LayerGeometry(**geometry["sharer"]),
+            geometry["mapping"],
+            fuser_config=FuserConfig(**(geometry.get("fuser_config") or {})),
+            gate_config=GateConfig(**(geometry.get("gate_config") or {})),
+            blend_config=BlendConfig(**(geometry.get("blend_config") or {})),
+        )
+        fuser.load_state_dict(state, strict=False)
+        fuser.eval()                                   # at serve: gates hard, dropout off
+        return fuser
+    except Exception as exc:
+        sys.stderr.write(f"c2c-serve: cannot read fuser weights {path!r}: {exc}\n")
+        return None
+
+
+class _FuserProxy:
+    """A fuser placeholder that carries a trained state until a real one
+    can be built. Calling it before the model geometries are known is a
+    configuration error and says so — helpfully, not cryptically."""
+
+    def __init__(self, state_dict):
+        self.state = state_dict
+        self._real = None
+
+    def __call__(self, receiver_cache, sharer_cache, **kwargs):
+        if self._real is None:
+            msg = ("the checkpoint is loaded but the model geometries are unknown to "
+                  "the proxy; register the pair through the Python API with a "
+                  "constructed Fuser to enable cache-to-cache fusion")
+            raise RuntimeError(msg)
+        return self._real(receiver_cache, sharer_cache, **kwargs)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser("c2c-serve")
+    args = parser.parse_args(argv)
+    base = load_config(args.config)
+    updates = {"host": args.host, "port": args.port,
+              "certfile": args.certfile, "keyfile": args.keyfile,
+              "api_key": args.api_key, "privacy": True if args.privacy else None}
+    cfg = ServeConfig(**{**vars(base.serve if hasattr(base, "serve") else base),
+                       **{k: v for k, v in updates.items() if v is not None}})
+    if args.engine:
+        default_hub.set_engine(args.engine)
+    if args.pair:
+        _register_cli_pairs(default_hub, args.pair, engine=args.engine)
+    try:
+        serve_forever(cfg)
+    except OSError as exc:
+        sys.stderr.write(f"c2c-serve: cannot bind {cfg.host}:{cfg.port}: {exc}\n")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

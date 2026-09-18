@@ -1,0 +1,8 @@
+{"instruction": "Explain what a KV-cache is.", "input": "", "output": "A KV-cache keeps the keys and values of the attention layers, so the model does not compute them twice."}
+{"instruction": "Translate to French:", "input": "the quick brown fox", "output": "le rapbroux brun goupil"}
+{"instruction": "Write a haiku about caches.", "input": "", "output": "keys in the morning / values in the evening light / the cache, ever warm"}
+{"instruction": "What is two plus two?", "input": "", "output": "four"}
+{"instruction": "Summarise: ", "input": "the report of the committee, in full", "output": "the report, summarised"}
+{"instruction": "Name the capital of Italy.", "input": "", "output": "Rome"}
+{"instruction": "Classify the sentiment.", "input": "the tests are green today", "output": "positive"}
+{"instruction": "List the primes below ten.", "input": "", "output": "2, 3, 5, 7"}

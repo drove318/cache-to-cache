@@ -1,0 +1,6 @@
+{"question": "What is the capital of France?", "choices": ["Paris", "London", "Berlin", "Madrid"], "answer": 0}
+{"question": "Who wrote 'Romeo and Juliot'?", "choices": ["Dickens", "Shakespeares", "Twain", "Austens"], "answer": 1}
+{"question": "What is 7 × 8?", "choices": ["54", "56", "48", "64"], "answer": 1}
+{"question": "Which planet is the reddest?", "choices": ["Venus", "Jupiter", "Mars", "Mercury"], "answer": 2}
+{"question": "The Great Barrier Reef lies off…", "choices": ["Brazil", "Australia", "India", "Mexico"], "answer": 1}
+{"question": "Water boils at… (at sea level)", "choices": ["90 °C", "100 °C", "110 °C", "80 °C"], "answer": 1}

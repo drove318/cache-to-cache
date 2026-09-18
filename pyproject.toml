@@ -1,0 +1,97 @@
+# C2C — Cache-to-Cache. Universal middleware for direct semantic communication
+# between large language models. Spec: C2C-SPEC.md · Paper: arXiv:2510.03215v2.
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"c2c" = ["man/*", "py.typed"]
+
+[project]
+name = "c2c-cache"
+version = "1.0.0"
+description = "Cache-to-Cache (C2C): direct semantic communication between LLMs through fused KV-Caches — middleware for every harness."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Paul J. Reuer", email = "paul.j.reuer@gmail.com" }]
+dependencies = [
+  "numpy>=1.24",
+]
+keywords = [
+  "llm", "multi-llm", "kv-cache", "cache-to-cache", "agents", "harness",
+  "middleware", "openai-compatible", "mcp", "a2a", "inference",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3 :: 10",
+  "Programming Language :: Python :: 3 :: 11",
+  "Programming Language :: Python :: 3 :: 12",
+  "Topic :: Scientific :: Artificial Intelligence :: Intelligence",
+  "Topic :: Software Development :: Software Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/paul-j-reuer/cache-to-cache"
+Repository = "https://github.com/paul-j-reuer/cache-to-cache"
+Documentation = "https://github.com/paul-j-reuer/cache-to-cache/tree/main/docs"
+Issues = "https://github.com/paul-j-reuer/cache-to-cache/issues"
+Paper = "https://arxiv.org/abs/2510.03215"
+
+[project.optional-dependencies]
+# The wire (proxy/MCP/CLI/doctor) is stdlib-only; torch is the brain, an
+# extra. Engines are optional peers behind the adapter ABI (spec §4.1).
+train = ["torch>=2.1"]                     # the fuser, the trainer, the alignment nets
+gpu = ["torch>=2.1"]                       # the CUDA build, on the gpu runner of the CI
+viz = ["matplotlib>=3.7"]
+crypto = ["cryptography>=41"]              # EX-5 privacy mode: AES-GCM on the wire
+dev = ["pytest>=7.4", "pytest-timeout>=2.1"]
+
+[project.scripts]
+# Control-plane only (spec HL-4): deliberately NO `c2c run-agent` —
+# the harness stays the master; C2C is the wire between models.
+c2c = "c2c.cli.main:main"
+c2c-serve = "c2c.serve.openai_proxy:main"
+c2c-mcp = "c2c.serve.mcp:main"
+c2c-a2a = "c2c.serve.a2a:main"
+
+[project.entry-points."c2c.engines"]
+# Adapter registry (spec §4.1): "one ABI, many adapters". Third parties ship
+# `pip install their-adapter` exposing this group; c2c discovers it with zero
+# core changes.
+reference = "c2c.integrations.reference:ReferenceAdapter"
+hf = "c2c.integrations.hf:HFAdapter"
+transformers = "c2c.integrations.hf:HFAdapter"
+vllm = "c2c.integrations.vllm:vLLMAdapter"
+sglang = "c2c.integrations.sglang:SGLangAdapter"
+"tensorrt-llm" = "c2c.integrations.trtllm:TensorRTLLMAdapter"
+tgi = "c2c.integrations.tgi:TGIAdapter"
+ollama = "c2c.integrations.ollama:OllamaAdapter"
+mlx = "c2c.integrations.mlx:MLXAdapter"
+"llama-cpp" = "c2c.integrations.llamacpp:LlamaCppAdapter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers"]
+markers = [
+  "gpu: needs CUDA + a real engine (paper-table reproduction; skipped without)",
+  "network: needs internet (dataset/model download; skipped in offline CI)",
+  "slow: > 30 s on CPU (still runs; deselect with -m 'not slow')",
+]
+filterwarnings = ['error::DeprecationWarning:c2c\..*']
+
+[tool.coverage.run]
+source = ["c2c"]
+branch = true
+
+[tool.coverage.report]
+exclude-lines = ['pragma: no cover', "raise NotImplementedError"]

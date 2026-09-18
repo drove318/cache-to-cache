@@ -1,0 +1,67 @@
+C2C.ENGINES(7)                    C2C Manual                      C2C.ENGINES(7)
+
+NAME
+    c2c.engines — the seven whole engines, and the adapters that drive them
+
+DESCRIPTION
+    In-process adapters implement the pair of interfaces CacheProvider
+    (capture) and CacheInjector (install, generate, score). They are
+    discovered through the entry-point group c2c.engines; the registry
+    (c2c.integrations.engines) keeps built-in and user entries in
+    separate places (c2c.engines(7) — read the manual pages before
+    mounting an adapter).
+
+    Engines of the distribution, with notes:
+
+    reference      Always available, no dependencies; a miniature
+               deterministic Transformer (prefill, capture, install,
+               greedy and sampled generation, teacher-forced score).
+               The reference implementation of the ABI: what passes here,
+               passes everywhere.
+
+    hf             HF Transformers: past_key_values via forward hooks
+               and the generation mixin. Full fidelity where the engine
+               version exposes the cache API; degrades to prefill-only
+               capture (documented) when it does not.
+
+    vllm           vLLM: prefix-cache / KV-connector plugin interface
+               (the engine's own connector API). Where no connector is
+               found, the adapter degrades to prefill-only capture and
+               says so.
+
+    sglang         SGLang: RadixAttention cache hooks.
+
+    tensorrt-llm, tgi, ollama, mlx, llama-cpp
+               Per-engine shims. Where the engine exposes no cache hook,
+               the adapter falls back to prefill-only capture and
+               documents the degradation (see DEGRADATION, printed by
+               c2c doctor). No degradation is silent, ever.
+
+    Third parties may ship their own adapters: expose the entry point in
+    the group c2c.engines, implement the two interfaces, one ABI, many
+    adapters. See the plugin SDK guide in CONTRIBUTING.md.
+
+    Out-of-process, harness-agnostic (the "any harness" guarantee):
+
+    c2c-serve      OpenAI-compatible HTTPS front; virtual model ids of
+               the form c2c/<receiver>←<sharer>; streaming SSE; tools
+               passed through to the Receiver.
+
+    c2c-mcp        Model Context Protocol server on stdio; tools
+               c2c_register_pair, c2c_fuse, c2c_ask; the harness still
+               owns the loop.
+
+    A2A bridge     Agent cards advertised beside the text endpoints, so
+               multi-harness agent societies can discover
+               cache-capable peers.
+
+ACCEPTANCE (spec §4.2)
+    The paper's Table 4 accuracies and times, within ±0.5 %, must be
+    attainable through each of: the native HF adapter, the vLLM adapter,
+    the c2c-serve proxy, the c2c-mcp server. One communication, many
+    transports.
+
+SEE ALSO
+    c2c(1), c2c.config(5), c2c.fuser(5), the manual of your engine.
+
+C2C 1.0.0                                                      C2C.ENGINES(7)

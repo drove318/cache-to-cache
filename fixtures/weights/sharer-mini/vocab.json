@@ -1,0 +1,9 @@
+{
+ "model_type": "gpt2",
+ "vocab_size": 64,
+ "added_tokens": {
+  "pad": 0,
+  "unk": 1,
+  "eos": 2
+ }
+}

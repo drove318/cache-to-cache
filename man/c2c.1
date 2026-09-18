@@ -1,0 +1,80 @@
+C2C(1)                        C2C Manual                        C2C(1)
+
+NAME
+    c2c — the Cache-to-Cache middleware console utility
+
+SYNOPSIS
+    c2c [-h] [--version] COMMAND [OPTION] [ARGUMENT] ...
+    c2c-serve [--host HOST] [--port PORT] [--certfile FILE] [--keyfile FILE]
+    c2c-mcp
+
+DESCRIPTION
+    C2C lets heterogeneous LLMs communicate through directly fused
+    KV-Caches instead of text (Fu et al., Cache-to-Cache: Direct Semantic
+    Communication Between Large Language Models, ICLR 2026,
+    arXiv:2510.03215v2).
+
+    C2C is middleware, not a harness. It never owns an agent loop, tool
+    dispatch, or session management. The harness stays the master; C2C is
+    the wire between models.
+
+COMMANDS
+    The set of recognised commands (there is deliberately NO run-agent):
+
+    doctor
+        Check the installation, check the engines, report the findings;
+        exit status 1 with --strict when a check failed.
+
+    eval
+        Run the golden regression against the paper (Tables 1-15 as
+        pytest cases). Options: --table N (repeatable), -k EXPR, -v.
+
+    fuse
+        Fuse two caches into one, print the FusionReport. Mandatory:
+        --receiver ID --sharer ID. Options: --engine ENGINE, --prompt
+        TEXT, --fraction F (0..1 or 0..100), --direction former|latter,
+        --variant simple|c2c-c, --seed N, --report, --answer.
+
+    man [TOPIC]
+        Format the manual pages. Topics: c2c, config, fuser, engines,
+        zoo. Without TOPIC, the overview.
+
+    serve
+        Start the OpenAI-compatible HTTPS front; see c2c-serve(1) for
+        the whole option list (routes: /v1/chat/completions,
+        /v1/completions, /v1/models, /healthz).
+
+    train
+        Fit the fuser on a dataset; the two LLMs stay frozen. Mandatory:
+        --receiver ID --sharer ID --dataset FILE. Options: --engine
+        ENGINE, --epochs N, --lr RATE, --total-steps N, --out FILE,
+        --variant simple|c2c-c, --seed N, -v.
+
+    zoo ACTION
+        The zoo maintenance interface for trained fusers. Actions: list,
+        publish, get, remove (options per action: --sharer ID --receiver
+        ID --checkpoint FILE --name NAME).
+
+EXIT STATUS
+    0   success
+    1   user error or a check failed (doctor --strict)
+    2   system error (missing dependency, unwritable location)
+    130 interrupted (Keyboard Interrupt)
+
+ENVIRONMENT
+    C2C_SEED, C2C_DEVICE, C2C_ROOT, C2C_GATE_TAU_MAX, C2C_GATE_TAU_MIN,
+    C2C_BLEND_FRACTION, C2C_BLEND_DIRECTION, C2C_ALIGN_TOKEN_COLLISION,
+    C2C_ALIGN_LAYERS, C2C_LR, C2C_MACRO_BATCH, C2C_MAX_SEQ,
+    C2C_TOTAL_STEPS, C2C_HOST, C2C_PORT, C2C_API_KEY, C2C_PRIVACY,
+    NO_COLOR / FORCE_COLOR. Environment variables win over the
+    configuration file; see c2c.config(5).
+
+FILES
+    $C2C_ROOT/config.json        JSON overlay (defaults: ~/.cache/c2c)
+    $C2C_ROOT/zoo/<pair>/        local zoo of trained fuser weights
+
+SEE ALSO
+    c2c.config(5), c2c.fuser(5), c2c.zoo(5), c2c.engines(7),
+    the paper arXiv:2510.03215v2, the code and the tests.
+
+C2C 1.0.0                                                          C2C(1)

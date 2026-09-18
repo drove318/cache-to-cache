@@ -1,0 +1,41 @@
+# one front, two pairs, the health of both — the compose of the completions
+#
+#   docker compose --file docker/compose.yaml up --detach
+#
+# The key is read from the environment at the start; never bake secrets.
+services:
+
+  completions:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.completions
+    image: c2c/completions:latest
+    command:
+      - --pair
+      - math-small:coder-small
+      - -e
+      - hf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8121"
+    environment:
+      C2C_API_KEY: ${C2C_API_KEY:?set C2C_API_KEY in the environment}
+      C2C_SEED: "440"                       # the die of the house, cast once
+    ports:
+      - "8121:8121"
+    volumes:
+      - ../models:/models:read-only
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8121/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start-period: 10s
+    restart: unless-stopped
+
+  mcp:
+    image: c2c/completions:latest
+    entrypoint: ["c2c-mcp"]
+    command: ["--transport", "stdio"]
+    profiles: ["tools"]                     # stdio: for a client on the pipe, not a daemon
