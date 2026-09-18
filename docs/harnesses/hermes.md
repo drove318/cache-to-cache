@@ -6,7 +6,8 @@ that exact shape; point Hermès at the wire and the models speak cache-to-cache.
 ## 1. Serve the pair
 
 ```bash
-pip install "c2c-cache[train]"
+python3 -m venv .venv && . .venv/bin/activate    # the system pip is PEP 668-locked
+pip install "c2c-cache[train] @ git+https://github.com/drove318/cache-to-cache.git"
 c2c-serve --pair math-small:coder-small -e hf \
           --host 127.0.0.1 --port 8121 \
           --certfile certs/cert.pem --keyfile certs/key.pem \

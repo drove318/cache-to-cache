@@ -21,28 +21,45 @@ README and the paper disagree, the paper wins.
 
 ## Install
 
+Two facts decide the recipe. Modern Debian and Ubuntu mark the system Python
+*externally managed* (PEP 668) — a bare `pip install` there is refused, with
+or without `sudo`. And `c2c-cache` is not on the package index yet. So: one
+virtual environment, and the repository itself as the index — every command
+below is tested from a virgin venv:
+
 ```bash
-pip install c2c-cache                 # core: types, config, CLI, servers, diagnostics
-pip install "c2c-cache[train]"       # + torch: the fuser, the trainer, the alignment nets
-pip install "c2c-cache[gpu]"         # + CUDA builds of the engines you wire
+git clone https://github.com/drove318/cache-to-cache
+cd cache-to-cache
+python3 -m venv .venv && . .venv/bin/activate
+pip install ".[train,dev]"          # train: torch for the fuser — dev: pytest for `c2c eval`
 ```
 
-Python ≥ 3.10, `numpy≥1.24` always; `torch` only where neurons learn.
-Everything that does not learn — capture, wire, serve, probe, diagnose —
-runs without torch, so C2C imports cleanly in places where torch cannot go.
+Just the tools, no clone? Inside the venv, resolve straight from GitHub —
+`doctor` and `fuse` work from this install; `train` and `eval` need the
+fixtures in a checkout:
+
+```bash
+pip install "c2c-cache[train] @ git+https://github.com/drove318/cache-to-cache.git"
+```
+
+`[gpu]`, instead of `[train]`, on machines where an engine adapter wants its
+own CUDA builds. Python ≥ 3.10, `numpy≥1.24` always; `torch` only where
+neurons learn. Everything that does not learn — capture, wire, serve, probe,
+diagnose — runs without torch, so C2C imports cleanly in places where torch
+cannot go.
 
 ## Quickstart
 
-One console, seven commands. Try the whole paradigm in sixty seconds:
+One console, four commands, sixty seconds — run them from the clone above
+(`train` and `eval` read the repository's own fixtures and golden suite):
 
 ```bash
-pip install "c2c-cache[train]"
 c2c doctor                                   # the checkup, printed
 c2c fuse --receiver receiver-mini --sharer sharer-mini \
        -e reference --prompt "what is two plus two" --answer --report
 c2c train -d fixtures/datasets/tiny.jsonl \
        --receiver receiver-mini --sharer sharer-mini -e reference --verbose
-c2c eval --table 4 --verbose                  # the paper's Tables 3–8, as far as CI can see
+c2c eval --table 4 --verbose                 # the paper's Tables 3–8, as far as CI can see
 ```
 
 The answer of the fusion prints, and the report of the fuser tells: per-layer
