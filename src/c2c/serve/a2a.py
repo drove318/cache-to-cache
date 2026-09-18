@@ -76,10 +76,10 @@ def build_agent_card(config: ServeConfig | None = None, hub=None) -> dict:
         "url": base,
         "provider": {
             "organization": "cache-to-cache",
-            "url": "https://github.com/paul-j-reuer/cache-to-cache",
+            "url": "https://github.com/drove318/cache-to-cache",
         },
         "version": __version__,
-        "documentation": "https://github.com/paul-j-reuer/cache-to-cache/tree/main/docs",
+        "documentation": "https://github.com/drove318/cache-to-cache/tree/main/docs",
         "capabilities": {
             "streaming": True,
             "push_notifications": False,

@@ -257,7 +257,7 @@ class ZooClient:
         return f"{base}/api/models/{model}/resolve/{revision}/{name}"
 
     def _request(self, url: str) -> urllib.request.Request:
-        headers = {"User-Agent": "c2c-cache/1.0 (+https://github.com/paul-j-reuer/cache-to-cache)"}
+        headers = {"User-Agent": "c2c-cache/1.0 (+https://github.com/drove318/cache-to-cache)"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return urllib.request.Request(url, headers=headers)
