@@ -50,10 +50,16 @@ cannot go.
 
 ## Quickstart
 
-One console, four commands, sixty seconds — run them from the clone above
-(`train` and `eval` read the repository's own fixtures and golden suite):
+One console, one paste, on a machine that has never seen C2C. Everything the
+four commands need — the clone, the venv, the package — travels inside the
+paste; the second time you are here, only `. cache-to-cache/.venv/bin/activate`
+is needed:
 
 ```bash
+git clone https://github.com/drove318/cache-to-cache
+cd cache-to-cache
+python3 -m venv .venv && . .venv/bin/activate
+pip install ".[train,dev]"          # the first paste fetches torch — about a minute
 c2c doctor                                   # the checkup, printed
 c2c fuse --receiver receiver-mini --sharer sharer-mini \
        -e reference --prompt "what is two plus two" --answer --report
