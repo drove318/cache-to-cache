@@ -21,7 +21,7 @@ description = "Cache-to-Cache (C2C): direct semantic communication between LLMs 
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Paul J. Reuer", email = "158539850+drove318@users.noreply.github.com" }]
+authors = [{ name = "Drove", email = "158539850+drove318@users.noreply.github.com" }]
 dependencies = [
   "numpy>=1.24",
 ]
