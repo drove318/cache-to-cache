@@ -51,13 +51,14 @@ terminal.
 
 ## Use, anywhere; wire between models
 
-The same wire, every harness. Point a client, or a harness, at the served
+The same wire, every harness. Start the front (`c2c-serve
+--pair receiver-mini+sharer-mini`), point a client at the served
 front — an OpenAI-compatible endpoint — and the models speak cache-to-cache:
 
 ```python
 import os
 from openai import OpenAI                       # any client, any harness, any model
-client = OpenAI(base_url="http://127.0.0.1:8121/v1",
+client = OpenAI(base_url="http://127.0.0.1:8788/v1",
                 api_key=os.environ["C2C_API_KEY"])
 answer = client.chat.completions.create(
     model="c2c/receiver-mini+sharer-mini",
@@ -79,9 +80,10 @@ The fuser is the neural heart of C2C — three modules, one residual
 
 | module              | paper                     | code                                    |
 |-------------------|--------------------------|-----------------------------------------|
-| projection         | §3.3.2, Eq. 2           | `c2c.fuser.modules.complex`             |
-| dynamic weighting  | §3.3.2, Eq. 4           | `c2c.fuser.weighting`                   |
-| gating             | §3.3.2, Eq. 5; Table 8 | `c2c.fuser.gating`                      |
+| projection         | §3.3.2, Fig. 5            | `c2c.fuser.modules`                   |
+| dynamic weighting  | §3.3.2, Fig. 5            | `c2c.fuser.modules`                   |
+| gating             | §3.3.2, Fig. 5; Table 8  | `c2c.fuser.modules`                   |
+| complex (C2C-C)    | App. A.1.3; Table 9      | `c2c.fuser.complex`                   |
 
 Alignment of the nets — token and layer — lives in `c2c.align`; the
 training scheme (both LLMs frozen, only the fuser learns) in `c2c.train`;
@@ -103,7 +105,7 @@ the attention heads of the geometry, and the steering heads of the console.
 | the tools of the trade (MCP) | `man c2c-mcp`                           |
 | the agents, toward each other (A2A) | `man c2c-a2a`                    |
 | the paper, per the tables    | `c2c eval --table N --verbose`          |
-| something is wrong            | `c2c doctor --report`, `c2c.failures`   |
+| something is wrong            | `c2c doctor --report`, `c2c.diagnostics.failure` |
 
 ## Reproducibility
 

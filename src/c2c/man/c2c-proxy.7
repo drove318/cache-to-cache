@@ -36,7 +36,8 @@ WIRE FORMAT OF THE CACHE ENVELOPE
             "layers": [{"layer": N, "key": TENSOR, "value": TENSOR}]}
 
        The geometry is checked against the manifest of the pair before
-       the tensor is trusted (F-15, the geometry, mismatched).
+       the tensor is trusted: a cache that lies about its geometry is
+       refused, not fused.
 
 ENVIRONMENT
        C2C_PROXY_HOST, C2C_PROXY_PORT, C2C_API_KEY, C2C_PAIRS,

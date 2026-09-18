@@ -9,12 +9,12 @@ wire's.
 ```bash
 c2c-serve --pair gpt-family-small:coder-tiny -e hf \
           --host 127.0.0.1 --port 8121 \
-          --api-key "$C2C_API_KEY" --privacy off
+          --api-key "$C2C_API_KEY"
 ```
 
-`--privacy off` is the default and says: the sharer's context may be fused.
-With `--privacy on` the sharer's cache is dropped and the receiver answers
-alone — the paper's limitation, honoured (F-17).
+By default the sharer's context may be fused. Given `--privacy`, the sharer's
+cache is refused and the receiver answers alone — the paper's limitation,
+honoured.
 
 ## 2. Configure Codex
 
@@ -37,8 +37,9 @@ model    = "c2c/gpt-family-small+coder-tiny"
 codex "explain the theorem of pythagoras, briefly"
 ```
 
-In the server log the line says `fused=true` with the per-layer gate values;
-in the answer, the gain the paper measured — 6.4 % to 14.2 % over the
+In the server log the line says `fused=true`; the per-layer gates live in the
+probe records (`c2c fuse --report`). And in the answer, the gain the paper
+measured — 6.4 % to 14.2 % over the
 stronger model alone, Tables 3–8 (`c2c eval` replays them against the
 fixtures).
 

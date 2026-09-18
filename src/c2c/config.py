@@ -167,7 +167,7 @@ class ServeConfig:
     model_prefix: str = "c2c/"       # virtual model ids start with this prefix
     pair_separator: str = "←"        # `c2c/<receiver>←<sharer>`; ASCII ok too
     cors: bool = True
-    privacy: bool = False          # --privacy: digests on the logs, no plain egress (FR-17)
+    privacy: bool = False          # --privacy: refuse the sharer, digest the logs (EX-5)
 
     def pair_from_model(self, model_id: str) -> tuple[str, str] | None:
         """Parse a virtual model id into (receiver, sharer).
@@ -184,7 +184,7 @@ class ServeConfig:
         raw = model_id
         if raw.startswith(self.model_prefix):
             raw = raw[len(self.model_prefix):]
-        for sep in (self.pair_separator, "-->", "->", "→", "--", ":"):
+        for sep in (self.pair_separator, "+", "-->", "->", "→", "--", ":"):
             if sep in raw:
                 left, right = raw.split(sep, 1)
                 left, right = left.strip(), right.strip()
@@ -351,7 +351,8 @@ DESCRIPTION
        information per token/query, one weight per attention head,
        computed from the pooled key/value statistics of the incoming
        cache entries. MHA/GQA/MQA are distinguished via LayerGeometry.
-       (See also: the heads of the KV-cache tensors, diagnostics(7).)
+       (See also: the rank of the KV-cache tensors, measured by
+       c2c.diagnostics.rank, documented in the module itself.)
 
     2. CLI HEADS (subcommand headings).  The command `c2c` groups its
        options under CLI heads such as:
@@ -384,7 +385,7 @@ ENVIRONMENT
     C2C_PRIVACY            EX-5 privacy mode on/off
 
 SEE ALSO
-    c2c(1), c2c-zoo(5), man c2c.fuser, `c2c man config`
+    c2c(1), c2c-zoo(5), c2c-fuser(5), c2c-engines(7), `c2c man config`
 
 END C2C.CONFIG(5)
 """

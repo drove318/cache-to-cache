@@ -6,12 +6,12 @@ and pairs (``register_pair``). The proxy (``c2c-serve``), the MCP server
 virtual id such as ``c2c/qwen3-0.6b←qwen2.5-0.5b`` means the same thing
 on every transport, on every machine, in every harness.
 
-Resolution rules (published, see the man page ``c2c.config(5)``,
-section MODEL IDS):
+Resolution rules (published, and mirrored in the manual pages
+``c2c-serve(1)`` and ``c2c-engines(7)``):
 
 * the prefix ``c2c/`` selects the C2C namespace;
 * the pair separator is the leftwards arrow ``←`` (U+2190); the ASCII
-  alternatives ``->``, ``-->``, ``→``, ``--`` and ``:`` are accepted so
+  alternatives ``+``, ``->``, ``-->``, ``→``, ``--`` and ``:`` are accepted so
   every harness can type it;
 * the first component names the **Receiver**, the second the **Sharer**
   — reading direction respected, conventions of the community preserved;
@@ -146,7 +146,7 @@ class ModelHub:
         raw = self._canonical(model_id)
         if not raw:
             return None
-        for sep in (self.config.pair_separator, "-->", "->", "→", "--", ":"):
+        for sep in (self.config.pair_separator, "+", "-->", "->", "→", "--", ":"):
             if sep in raw:
                 left, _, right = raw.partition(sep)
                 left, right = left.strip(), right.strip()

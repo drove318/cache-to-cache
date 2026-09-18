@@ -25,7 +25,7 @@ suspect
 
 Every reading is emitted as one structured log record (JSON per line,
 ``logging`` module, dedicated handler) — never printed to the terminal
-behind the user's back, and always available to ``c2c fuse --explain``.
+behind the user's back, and always available to ``c2c fuse --report``.
 """
 
 from __future__ import annotations

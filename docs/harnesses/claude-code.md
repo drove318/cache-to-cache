@@ -32,11 +32,12 @@ OpenAI wire.)
 Ask for a completion through the pair, and confirm in the server log:
 
 ```text
-c2c-serve: POST /v1/chat/completions  model=c2c/code-small+review-small  fused=true  layers=12  gates=0.61..0.88
+[c2c-serve] chat/completions model=c2c/code-small+review-small fused=true prompt='…' answer='…'
 ```
 
-The `fused=true` and the gate range say: the cache came, saw, and conquered
-the text channel. No text between the models; the tools stay Claude's.
+The `fused=true` says: the cache came, saw, and conquered the text channel.
+The per-layer gates ride in the probe records (`c2c fuse --report`,
+`c2c.diagnostics.failure`). No text between the models; the tools stay Claude's.
 
 ## Fault notes
 

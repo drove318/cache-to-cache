@@ -284,7 +284,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                    *, used: bool = False) -> None:
         """Access log, one line per exchange, on the operator's terminal.
 
-        With ``--privacy`` (FR-17) only SHA-256 digests leave the box: the
+        With ``--privacy`` (EX-5, the sealed wire) only SHA-256 digests leave the box: the
         server can say that an exchange happened, not what was said. Without
         it, a bounded snippet travels to the log, for debugging.
         """
@@ -588,8 +588,9 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
                             "trained fuser: 'receiver←sharer:/path/to/weights.pt'")
     parser.add_argument("--config", default=None, help="path to a config.json")
     parser.add_argument("--privacy", action="store_true",
-                      help="seal the wire: SHA-256 digests on the access logs, "
-                         "no plaintext egress (FR-17)")
+                      help="no cache, no trace: the sharer's context is refused "
+                           "before it is attempted, and the access logs carry "
+                           "SHA-256 digests only (the sealed wire, EX-5)")
     return parser
 
 

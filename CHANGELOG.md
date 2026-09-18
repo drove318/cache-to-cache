@@ -27,7 +27,8 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
 - The zoo: publish, get, list, remove — O(1) in the count of sharers, per
   the contract of FR-13 / EX-1; and the blending of the many caches, in one
   call, linear in the number of caches, `c2c.zoo.fuse_many_to_one`.
-- The diagnostics: `c2c doctor`, the failure modes catalogued (F-1…F-17),
+- The diagnostics: `c2c doctor` (with `--report`, the machine-readable
+  manifest), the gate attributions of every fusion (`c2c.diagnostics.failure`),
   the effective-rank estimator (Roy & Vetterli), and the gates of quality.
 - The golden regression suite: `c2c eval --table N`, the numbers of the paper,
   Tables 3 through 8, with the fixtures offline — no internet except fixtures.

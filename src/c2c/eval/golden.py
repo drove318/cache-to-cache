@@ -269,4 +269,7 @@ TABLE_KEYWORDS: dict[int, str] = {
     6: "table_6_the_sources",
     7: "table_7_the_pairs",
     8: "ablations_is_the_floor",
+    12: "the_appendix_tables_beyond_the_text",
+    13: "the_appendix_tables_beyond_the_text",
+    15: "the_appendix_tables_beyond_the_text",
 }

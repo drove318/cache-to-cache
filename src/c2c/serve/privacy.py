@@ -1,14 +1,15 @@
 """Privacy mode (EX-5): the wire, sealed.
 
-Two knobs, both off by default (spec §3 EX-5):
+Two knobs of the module — the console carries the master switch
+``--privacy`` (or ``C2C_PRIVACY``); these fields live on ``PrivacyConfig``:
 
-``--no-text``
+``no_text_egress`` — :class:`NoTextFilter`
     egress filter: raw strings never leave the box. Anything that would
     travel as plain text is replaced by a non-reversible digest of its
     content (SHA-256, truncated), so cache segments can be transmitted
     and reconciled without exposing the document.
 
-``--aes-gcm``
+``aes_gcm`` — :class:`WireCrypto`
     the cache segments travel encrypted and authenticated, on the wire.
     Uses AES-GCM through the optional ``cryptography`` peer (extra:
     ``c2c-cache[crypto]``). There is no silent fallback to a weaker

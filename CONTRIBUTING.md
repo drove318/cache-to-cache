@@ -36,8 +36,8 @@ c2c doctor                            # the checkup, printed; make it say ok
 ```
 
 `c2c doctor` is the first thing to run and the last thing to trust. If it
-cannot reproduce your fault, `c2c.failures` names the fault modes
-(F-1 … F-17), and the doctor reports which of them your machine has.
+cannot reproduce your fault, `c2c.diagnostics.failure` attributes every
+fusion layer by layer — which gate opened, how far its delta travelled.
 
 ## The way of a change
 

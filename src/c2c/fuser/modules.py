@@ -1,9 +1,9 @@
 """Fuser modules: projection, dynamic weighting, gate (paper Fig. 5).
 
-    ┌────────────┐   ┌──────────────┐   ┌──────────────┐   ┌─────┐   ┌───┐
-    │ projection ├─→ │ dynamic      ├─→ │ feature      ├─→ │ × g ├─→ │ + ├─→ fused
-    │  (concat)  │   │ weighting    │   │   fusion     │   │gate │   │r  │   cache
-    └────────────┘   └──────────────┘   └──────────────┘   └─────┘   └───┘
+    ┌──────────────┐   ┌────────────┐   ┌──────────────┐   ┌─────┐   ┌───┐
+    │ feature      ├─→ │ projection ├─→ │ dynamic      ├─→ │ × g ├─→ │ + ├─→ fused
+    │ fusion (cat) │   │  (linear)  │   │ weighting    │   │gate │   │r  │   cache
+    └──────────────┘   └────────────┘   └──────────────┘   └─────┘   └───┘
 
 The two heads, distinguished (spec FR-06): *attention heads* are the model
 dimension here — the dynamic weighting module performs input-aware head

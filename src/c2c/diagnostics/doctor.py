@@ -7,8 +7,9 @@ fusion — two synthetic caches in, one fused cache out, effective ranks
 measured — so a user learns, before filing any bug report, whether their
 installation is sound.
 
-Exit status: 0 success · 1 warnings present (all advisory) · 2 failure.
-The report renders each check, its status, and a hint when one is due.
+Exit status: 0 when the checks pass, or when only warnings are present
+(all advisory). With ``--strict``, a failed check exits 1. The report
+renders each check, its status, and a hint when one is due.
 """
 
 from __future__ import annotations

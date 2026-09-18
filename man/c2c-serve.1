@@ -6,9 +6,8 @@ NAME
 SYNOPSIS
        c2c-serve [--host HOST] [--port PORT] [--certfile FILE]
                  [--keyfile FILE] [--api-key KEY | C2C_API_KEY]
-                 [--pair RECEIVER[+SHARER]] [--engine ENGINE]
-                 [--config FILE] [--privacy] [--log-level LEVEL]
-                 [--fuser-weights PATH]
+                 [--pair RECEIVER[+SHARER[:WEIGHTS.pt]]]
+                 [-e ENGINE] [--config FILE] [--privacy] [-v]
 
 DESCRIPTION
        The front answers on a port, and fuses the cache of the sharer
@@ -20,23 +19,30 @@ DESCRIPTION
        /v1/completions       the plain, the old completion
        /healthz              the pulse, for the probes of orchestrators
 
-       The pair is named RECEIVER, or RECEIVER+SHARER, a name from the
-       registry of the --config file. The engine names the adapter:
-       hf, vllm, sglang, trtllm, llamacpp, mlx, tgx, ollama, reference.
+       The pair is named RECEIVER+SHARER, a name from the registry or
+       from the --config file; attach trained weights as
+       RECEIVER+SHARER:FILE.pt. The engine names the adapter: hf,
+       transformers, vllm, sglang, tensorrt-llm, tgi, ollama, mlx,
+       llama-cpp, reference.
 
 OPTIONS
        --host HOST        the address to answer on; default 127.0.0.1,
                           and wisely so, for it is a localhost
-       --port PORT        the port; default 8121
+       --port PORT        the port; default 8788
        --certfile FILE    the certificate; with --keyfile, HTTPS
        --keyfile FILE     the key; keep it secret, keep it readable
        --api-key KEY      the key of the house; or C2C_API_KEY in the
                           environment; absent, the door stands open
+       -e, --engine NAME  the adapter for auto-built models; one of hf,
+                          transformers, vllm, sglang, tensorrt-llm, tgi,
+                          ollama, mlx, llama-cpp, reference
+       --pair RECEIVER+SHARER[:WEIGHTS.pt]
+                          register a collaboration pair; repeatable
+       --config FILE      the JSON configuration of the served
        --privacy          no cache, no trace: the sharer's context is
-                          dropped, the receiver answers alone (F-17)
-       --config FILE      the ini of the served: [serve], [pair], [fuser]
-       --fuser-weights PATH
-                          the learned weights, from the zoo or from disk
+                          refused before it is attempted, the receiver
+                          answers alone, the log carries digests only
+       -v, --verbose      report each exchange on stderr
 
 EXIT STATUS
        0  the front served, and stopped, gently
@@ -44,10 +50,10 @@ EXIT STATUS
        2  the usage, wrong
 
 EXAMPLES
-       c2c-serve --pair math-small:coder-small -e hf --port 8121 \
+       c2c-serve --pair "math-small+coder-small:/models/fuser.pt" \
                  --certfile certs/cert.pem --keyfile certs/key.pem
 
-       curl https://127.0.0.1:8121/v1/chat/completions \
+       curl https://127.0.0.1:8788/v1/chat/completions \
             -H "authorization: bearer $C2C_API_KEY" \
             -d '{"model": "c2c/math-small+coder-small",
                  "messages": [{"role": "user",
@@ -55,9 +61,11 @@ EXAMPLES
                  "stream": true}'
 
 REPORTING FAULTS
-       The failure modes of the front are catalogued in c2c.failures
-       as F-9 (the wire, misformed), F-15 (the geometry, mismatched),
-       F-17 (the privacy, unhonoured). See c2c(1) and doctor(1).
+       The fault probes of the house live in the module
+       c2c.diagnostics.failure: per-layer gate attributions, the failure
+       probe, the structured log. The checkup is `c2c doctor` (add
+       --report for the machine-readable manifest); the console page is
+       c2c(1).
 
 SEE ALSO
        c2c(1), c2c-proxy(7), c2c-mcp(1), c2c-a2a(7), c2c.config(5)

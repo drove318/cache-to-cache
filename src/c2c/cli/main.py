@@ -71,6 +71,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     checks = run_all(cfg)
     print(format_report(checks, title="c2c doctor"))
+    if args.report:
+        import json as _json
+        rows = [{"check": c.name, "status": c.status, "detail": c.detail,
+              "hint": c.hint} for c in checks]
+        print(_json.dumps({"doctor": "c2c", "checks": rows},
+                      indent=2, sort_keys=True))
     failed = any(c.status == "fail" for c in checks)
     return 1 if (failed and args.strict) else 0
 
@@ -246,9 +252,17 @@ def cmd_eval(args: argparse.Namespace) -> int:
         for n in args.table:
             keyword = TABLE_KEYWORDS.get(int(n))
             if keyword is None:
-                print(error_hint(f"no golden tests are kept for Table {n}",
-                                hint="the kept tables are 1–8; see c2c.eval.golden"),
-                      file=sys.stderr)
+                from ..eval.golden import UNAVAILABLE
+                key = f"table{int(n):02}"
+                if key in UNAVAILABLE:
+                    msg = f"Table {n} has no kept numbers: {UNAVAILABLE[key]}"
+                    tip = "the table is mourned by name in the golden suite"
+                else:
+                    msg = f"no golden tests are kept for Table {n}"
+                    tip = ("the kept tables are "
+                           + ", ".join(str(k) for k in sorted(TABLE_KEYWORDS))
+                           + "; see c2c.eval.golden")
+                print(error_hint(msg, hint=tip), file=sys.stderr)
                 return 2
             kparts.append(f"({keyword})")
     if args.markexpr:
@@ -371,6 +385,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default=None)
     p.add_argument("-s", "--strict", action="store_true",
                   help="exit non-zero when any check fails")
+    p.add_argument("--report", action="store_true",
+                  help="also print the machine-readable manifest (JSON), for the pipelines")
     p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("fuse", help="fuse two caches; print the fusion report")

@@ -26,9 +26,9 @@ c2c-serve --pair math-small:coder-small -e hf --port 8121 \
 
 # the client, any client, the OpenAI shape
 python - <<'EOF'
-from openai import client
+from openai import OpenAI
 import os
-client = client(base_url="http://127.0.0.1:8121/v1",
+client = OpenAI(base_url="http://127.0.0.1:8121/v1",
                 api_key=os.environ["C2C_API_KEY"])
 answer = client.chat.completions.create(
     model="c2c/math-small+coder-small",

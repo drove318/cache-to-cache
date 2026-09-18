@@ -168,6 +168,8 @@ class TestTheDeclaredUnavailable:
     def test_the_figures_are_accounted_for(self):
         """Figures 3–13: the plots, in the extraction, are the pixels."""
         assert FIGURES, "no figures declared at all"
+        assert set(FIGURES) == {f"figure{n:02}" for n in range(3, 14)}, \
+            "the figure roster must cover 3 through 13, all of them"
         for key, reason in FIGURES.items():
             assert key.startswith("figure")
             assert reason                                            # each, explained

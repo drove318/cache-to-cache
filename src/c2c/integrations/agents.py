@@ -443,9 +443,9 @@ class CrossModal:
     The paper itself lists it under future work (§5, 2): *"fusing caches
     among vision-language models (VLMs) and vision-language-action (VLA)
     models may enable richer multi-modal collaboration."* The ``--modal``
-    flag exists so that scripts may be written against the interface
-    today; using it reports the truth, the whole truth, and nothing but
-    the implementation status.
+    flag is declared here, not yet wired to any parser: the interface
+    exists so that scripts may be written against it today; asking
+    :attr:`STATUS` reports the truth, the whole truth, nothing but.
     """
 
     STATUS = "experimental: cross-modal cache fusion is not implemented (paper §5, future work 2)"
