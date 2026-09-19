@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 __all__ = ["supports_color", "style", "Table", "Progress", "banner", "error_hint"]
 
@@ -106,7 +106,7 @@ class Progress:
             sys.stderr.write("\n")
             sys.stderr.flush()
 
-    def __enter__(self) -> "Progress":
+    def __enter__(self) -> Progress:
         return self
 
     def __exit__(self, *exc) -> bool:

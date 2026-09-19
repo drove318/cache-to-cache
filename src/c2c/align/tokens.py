@@ -25,8 +25,9 @@ aligner accepts either, see :func:`_resolve_decode`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Protocol
 
 __all__ = ["TokenizerLike", "AlignedToken", "TokenAligner", "TokenAlignment"]
 
@@ -213,7 +214,7 @@ class TokenAligner:
         """The coverage of a candidate: length of its decoded string."""
         try:
             return len(self._dec_s(list(ids)))
-        except Exception:                              # noqa: must not crash alignment
+        except Exception:                              # must not crash alignment
             return 0
 
     # -- the alignment proper ───────────────────────────────────────────────

@@ -9,10 +9,17 @@ from __future__ import annotations
 
 import pytest
 
-from c2c.integrations.agents import (FlowResult, FlowStep, RoutingStats,
-                                      SpeculativeAccelerator, SpeculativeStats,
-                                      TokenRouter, UnsafeExpression, run_flow,
-                                      safe_eval)
+from c2c.integrations.agents import (
+    FlowResult,
+    FlowStep,
+    RoutingStats,
+    SpeculativeAccelerator,
+    SpeculativeStats,
+    TokenRouter,
+    UnsafeExpression,
+    run_flow,
+    safe_eval,
+)
 
 
 def _pair():

@@ -5,9 +5,19 @@ from __future__ import annotations
 import pytest
 import torch
 
-from c2c.types import (AttentionKind, BlendDirection, CacheInjector, CacheProvider,
-                       FusionReport, LayeredCache, LayerGeometry, LayerSlice,
-                       ModelSpec, concat_rows, select)
+from c2c.types import (
+    AttentionKind,
+    BlendDirection,
+    CacheInjector,
+    CacheProvider,
+    FusionReport,
+    LayeredCache,
+    LayerGeometry,
+    LayerSlice,
+    ModelSpec,
+    concat_rows,
+    select,
+)
 
 
 class TestLayerGeometry:

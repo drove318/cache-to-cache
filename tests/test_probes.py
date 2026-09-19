@@ -7,16 +7,13 @@ within the target's representation space). Experimental instruments first.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 import torch
 
-from c2c.integrations.reference import (MiniatureTokenizer, ReferenceConfig,
-                                        ReferenceEngine)
-from c2c.probes.enrich import EnrichmentOracle, EnrichmentResult, METHODS
+from c2c.integrations.reference import MiniatureTokenizer, ReferenceConfig, ReferenceEngine
+from c2c.probes.enrich import METHODS, EnrichmentOracle, EnrichmentResult
 from c2c.probes.transform import TransformationOracle
-from c2c.types import LayerGeometry, LayeredCache, LayerSlice
+from c2c.types import LayeredCache, LayerGeometry, LayerSlice
 
 
 def engine(seed=42):

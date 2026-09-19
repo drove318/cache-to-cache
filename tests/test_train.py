@@ -15,10 +15,15 @@ import torch
 
 from c2c.config import TrainRecipe
 from c2c.fuser import Fuser
-from c2c.integrations.reference import (MiniatureTokenizer, ReferenceConfig,
-                                        ReferenceEngine)
-from c2c.train.scheme import (Sample, TrainingResult, Trainer, clip_grad_norm,
-                              load_jsonl_dataset, manual_seed)
+from c2c.integrations.reference import MiniatureTokenizer, ReferenceConfig, ReferenceEngine
+from c2c.train.scheme import (
+    Sample,
+    Trainer,
+    TrainingResult,
+    clip_grad_norm,
+    load_jsonl_dataset,
+    manual_seed,
+)
 
 
 def build_pair():

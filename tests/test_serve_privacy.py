@@ -143,6 +143,7 @@ class TestTheWire:
         import sys
         import threading
         import urllib.request
+
         from c2c.serve.openai_proxy import create_server
         from c2c.serve.registry import ModelHub
         hub = ModelHub(ServeConfig(api_key="k"))

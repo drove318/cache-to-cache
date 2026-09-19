@@ -27,10 +27,10 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from http import HTTPStatus
-from typing import Sequence
 from http.server import BaseHTTPRequestHandler
-from socketserver import ThreadingMixIn, TCPServer
+from socketserver import TCPServer, ThreadingMixIn
 
 from .. import __version__
 from ..config import ServeConfig, load_config
@@ -65,7 +65,7 @@ def build_agent_card(config: ServeConfig | None = None, hub=None) -> dict:
     models = []
     try:
         models = [mid for mid, _note, _ctx in hub.describe_models()]
-    except Exception:                                        # noqa: cards must print, never raise
+    except Exception:                                        # cards must print, never raise
         pass
     return {
         "protocol_version": "0.3.0",
@@ -305,7 +305,7 @@ class A2AHandler(BaseHTTPRequestHandler):
         params = body.get("params") if isinstance(body.get("params"), dict) else {}
         try:
             self._dispatch(method, req_id, params, principal)
-        except Exception as exc:                            # noqa: the wire must not drop
+        except Exception as exc:                            # the wire must not drop
             self.log_error("dispatch: %r", exc)
             self._rpc_error(req_id, -32603,
                           f"internal error: {exc.__class__.__name__} (see the server log)")
@@ -364,7 +364,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                 temperature=float(params.get("temperature", 0.0)),
                 tools=None,
                 stop=params.get("stop"))
-        except Exception as exc:                            # noqa: the task, failed, said so
+        except Exception as exc:                            # the task, failed, said so
             self.log_error("task %s raised %r", task["id"], exc)
             failed = store.set_state(task["id"], "failed")
             self._json({"jsonrpc": "2.0", "id": req_id,

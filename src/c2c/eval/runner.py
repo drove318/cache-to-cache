@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import time
 from collections import namedtuple
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Iterator, Sequence
 
-from .benchmarks import BENCHMARKS, extract_answer, load_benchmark, scorer
-from .golden import TABLES, TOLERANCE
+from .benchmarks import BENCHMARKS, load_benchmark, scorer
+from .golden import TOLERANCE
 
 __all__ = ["EvalResult", "run", "compare"]
 
@@ -46,8 +46,15 @@ def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
 
     ``ask(prompt) -> reply`` is the only thing the runner needs of the
     engine: prompt in, text out. The runner owns protocol (prompt template,
-    scoring, timing), the engine owns inference.
+    scoring, timing), the engine owns inference. An ``ask`` that accepts
+    ``max_new_tokens`` is handed the benchmark's cap; one that does not is
+    asked plainly, the way a text-to-text baseline would be.
     """
+    import inspect
+    try:
+        accepts_cap = "max_new_tokens" in inspect.signature(ask).parameters
+    except (ValueError, TypeError):                   # a callable with an uninspectable signature
+        accepts_cap = False
     bench = BENCHMARKS.get(bench_name)
     if bench is None:
         msg = f"unknown benchmark {bench_name!r}; known: {', '.join(sorted(BENCHMARKS))}"
@@ -59,7 +66,10 @@ def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
         item.setdefault("prompt", bench.prompt_for(item))
         prompt = item["prompt"]
         t0 = time.perf_counter()
-        reply = ask(prompt)
+        if accepts_cap:                               # the cap rides, when the engine offers it
+            reply = ask(prompt, max_new_tokens=cap)
+        else:
+            reply = ask(prompt)
         elapsed = time.perf_counter() - t0
         got = score(item, str(reply))
         result.per_item.append(got)

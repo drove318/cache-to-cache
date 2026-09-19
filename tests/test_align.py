@@ -10,12 +10,10 @@ test here, not a comment.
 from __future__ import annotations
 
 import random
-import string
 
 import pytest
 
-from c2c.align.layers import (LayerMapping, depth_normalized_mapping,
-                              terminal_mapping)
+from c2c.align.layers import LayerMapping, depth_normalized_mapping, terminal_mapping
 from c2c.align.tokens import AlignedToken, TokenAligner, TokenAlignment
 from c2c.integrations.reference import MiniatureTokenizer
 

@@ -65,8 +65,7 @@ class WireCrypto:
             msg = f"the privacy key must be exactly {_KEY_BYTES} bytes (256 bits), got {got}"
             raise ValueError(msg)
         try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, modes
-            from cryptography.hazmat.primitives.ciphers import algorithms
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         except ImportError as exc:
             raise ModuleNotFoundError(
                 "AES-GCM on the wire needs the cryptography peer "
@@ -113,7 +112,7 @@ class WireCrypto:
         decryptor = self._cipher(nonce).decryptor()
         decryptor.authenticate_additional_data(associated_data or b"")
         plain = decryptor.update(cipher_text)
-        from cryptography.exceptions import InvalidTag       # the peer, imported
+        from cryptography.exceptions import InvalidTag  # the peer, imported
         try:
             return plain + decryptor.finalize_with_tag(tag)
         except InvalidTag as exc:

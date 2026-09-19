@@ -23,8 +23,8 @@ import os
 import re
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
-from typing import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 
 __all__ = ["Benchmark", "BENCHMARKS", "load_benchmark", "extract_answer",
            "DEFAULT_FIXTURES"]

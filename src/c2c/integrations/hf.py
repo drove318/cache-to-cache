@@ -18,8 +18,7 @@ keeps the heads view for the dynamic weighting module (FR-06).
 
 from __future__ import annotations
 
-from ..types import (AttentionKind, LayeredCache, LayerGeometry, LayerSlice,
-                     ModelSpec)
+from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
 from .registry import AdapterNotSupported, EngineAdapter
 
 __all__ = ["HFAdapter", "available"]

@@ -31,9 +31,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
-from socketserver import ThreadingMixIn, TCPServer
+from socketserver import TCPServer, ThreadingMixIn
 
 from .. import __version__
 from .registry import default_hub
@@ -184,7 +185,7 @@ class MCPServer:
         except _BadParams as exc:
             emit(self._error(identifier, INVALID_PARAMS, str(exc)))
             return
-        except Exception as exc:                        # noqa: report, do not crash
+        except Exception as exc:                        # report, do not crash
             self.log(f"handler {method} raised {exc.__class__.__name__}: {exc}")
             emit(self._error(identifier, INTERNAL_ERROR,
                          f"internal error: {exc.__class__.__name__} (see the server log)"))
@@ -244,6 +245,7 @@ class MCPServer:
         fuser = None
         if weights_path:
             import os
+
             from ..zoo.publish import DEFAULT_ZOO_ROOT
             from .openai_proxy import _load_fuser_state
             root = os.path.realpath(os.path.expanduser(
@@ -305,7 +307,7 @@ class MCPServer:
                "error": {"code": code, "message": message}}
 
 
-class _BadParams(ValueError):
+class _BadParams(ValueError):  # noqa: N818 — raised and caught in this module alone
     """Raised by the tools when the arguments do not make sense."""
 
 
@@ -431,6 +433,7 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
         server.serve_forever()
         return 0
     import os
+
     from ..utils.console import banner, error_hint
     from .openai_proxy import is_loopback
     api_key = args.api_key or os.environ.get("C2C_API_KEY")

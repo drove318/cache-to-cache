@@ -10,10 +10,16 @@ from __future__ import annotations
 import pytest
 import torch
 
-from c2c.integrations.reference import (BOS, EOS, PAD, SPECIAL_TOKENS, UNK,
-                                        MiniatureTokenizer, ReferenceAdapter,
-                                        ReferenceConfig, ReferenceEngine)
-from c2c.types import LayeredCache, LayerGeometry, ModelSpec
+from c2c.integrations.reference import (
+    BOS,
+    EOS,
+    SPECIAL_TOKENS,
+    MiniatureTokenizer,
+    ReferenceAdapter,
+    ReferenceConfig,
+    ReferenceEngine,
+)
+from c2c.types import LayeredCache, ModelSpec
 
 
 def _engine(seed=42, variant="uni", **cfg):

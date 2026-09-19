@@ -21,8 +21,9 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from c2c.integrations.reference import (  # noqa: E402 — after path setup
-    MiniatureTokenizer, ReferenceAdapter, ReferenceConfig, ReferenceEngine)
-from c2c.types import LayerGeometry, LayeredCache, LayerSlice
+    MiniatureTokenizer,
+)
+from c2c.types import LayeredCache, LayerGeometry, LayerSlice  # noqa: E402 — after path setup
 
 SEED = 42
 

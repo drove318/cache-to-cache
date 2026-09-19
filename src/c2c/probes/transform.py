@@ -27,7 +27,6 @@ documented, never silent.
 from __future__ import annotations
 
 import csv
-import math
 from dataclasses import dataclass, field
 
 import torch
@@ -187,14 +186,14 @@ class TransformationOracle:
         return hits / int(t.shape[0])
 
     @staticmethod
-    def _pca(data) -> "torch.Tensor":
+    def _pca(data) -> torch.Tensor:
         """Project onto the first two principal components, exactly."""
         centred = data - data.mean(dim=0, keepdim=True)
         _, _, vh = torch.linalg.svd(centred, full_matrices=False)
         return centred @ vh[:2].transpose(0, 1)
 
     @staticmethod
-    def _tsne(data) -> "torch.Tensor":
+    def _tsne(data) -> torch.Tensor:
         try:
             from sklearn.manifold import TSNE
         except ImportError as exc:

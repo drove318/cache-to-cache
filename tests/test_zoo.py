@@ -14,7 +14,7 @@ import os
 import pytest
 import torch
 
-from c2c.types import LayerGeometry, LayeredCache, LayerSlice
+from c2c.types import LayeredCache, LayerGeometry, LayerSlice
 from c2c.zoo.kit import UnifiedLatentSpace
 from c2c.zoo.publish import MANIFEST_NAME, WEIGHTS_NAME, ZooClient, pair_id
 

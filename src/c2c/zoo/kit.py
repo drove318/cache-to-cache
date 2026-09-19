@@ -22,14 +22,13 @@ Conventions
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import torch
 from torch import nn
 
 from ..config import FuserConfig, GateConfig
 from ..fuser.complex import PreProjection
-from ..fuser.core import _rows
 from ..fuser.modules import DynamicWeighting, Gate
 from ..types import LayeredCache, LayerGeometry, LayerSlice
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from c2c.eval.benchmarks import BENCHMARKS, extract_answer, load_benchmark, scorer
+from c2c.eval.benchmarks import BENCHMARKS, extract_answer, load_benchmark
 from c2c.eval.golden import FIGURES, PROTOCOL, RECEIVER, TABLES, TOLERANCE, UNAVAILABLE
 from c2c.eval.runner import compare, run
 

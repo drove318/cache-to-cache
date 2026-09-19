@@ -14,8 +14,8 @@ from __future__ import annotations
 import dataclasses
 import os
 import sys
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
-from typing import Any, get_type_hints
+from dataclasses import dataclass, field, fields, is_dataclass
+from typing import Any
 
 __all__ = [
     "C2CConfig", "FuserConfig", "GateConfig", "BlendConfig", "AlignConfig",

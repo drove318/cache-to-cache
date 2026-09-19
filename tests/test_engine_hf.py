@@ -42,8 +42,8 @@ WORDS = ["[PAD]", "[UNK]", "[SEP]", "[CLS]", "[MASK]",
          "hello", "two", "plus", "four", "the", "answer", "is", "what", "please", "and"]
 DIMS = {A_HIDDEN: 24, A_HEADS: 4, A_KV: 2, A_LAYERS: 3, A_VOCAB: len(WORDS) + 2, A_CTX: 64}
 
-NATIVE_TOKENIZER_SOURCE = '''"""Naive word tokenizer carried by the synthetic folder itself."""
-WORDS = {words!r}
+NATIVE_TOKENIZER_SOURCE = f'''"""Naive word tokenizer carried by the synthetic folder itself."""
+WORDS = {WORDS!r}
 
 class NaiveWordTokenizer:
     """Whitespace split against the wordlist — the adapters whole needs."""
@@ -77,7 +77,7 @@ class NaiveWordTokenizer:
             return {{"input_ids": torch.as_tensor([ids]),
                    "attention_mask": torch.ones(1, len(ids), dtype=torch.long)}}
         return {{"input_ids": ids, "attention_mask": [1] * len(ids)}}
-'''.format(words=WORDS)
+'''
 
 exec(NATIVE_TOKENIZER_SOURCE, globals())      # NaiveWordTokenizer, defined once, used everywhere
 
@@ -139,7 +139,7 @@ def _naive_if_named(pretrained, *_args, **_kwargs):
         except Exception:
             named = ""
         if str(named).endswith("NaiveWordTokenizer"):
-            return NaiveWordTokenizer()
+            return NaiveWordTokenizer()  # noqa: F821 — bound by the exec below
     return _ORIGINAL_AUTO(pretrained, *_args, **_kwargs)
 
 
@@ -187,7 +187,6 @@ class TestServedRealFormatModel:
     """A hub, a front, a fused pair of folders — the whole boom-boom path."""
 
     def _front(self, hf_pair):
-        import torch
         from c2c.config import ServeConfig
         from c2c.fuser import Fuser
         from c2c.integrations.hf import HFAdapter
@@ -248,12 +247,12 @@ class TestTrainOnRealFormatModels:
         runner = os.path.join(work, "runner.py")
         with open(runner, "w", encoding="utf-8") as fh:
             fh.write(
-                "import sys\n"
-                "sys.path.insert(0, %r)\n"
-                "import test_engine_hf as _guide, transformers as _tf\n"
-                "_tf.AutoTokenizer.from_pretrained = staticmethod(_guide._naive_if_named)\n"
-                "from c2c.cli.main import main\n"
-                "sys.exit(main())\n" % (tests_dir,)
+                f"import sys\n"
+                f"sys.path.insert(0, {tests_dir!r})\n"
+                f"import test_engine_hf as _guide, transformers as _tf\n"
+                f"_tf.AutoTokenizer.from_pretrained = staticmethod(_guide._naive_if_named)\n"
+                f"from c2c.cli.main import main\n"
+                f"sys.exit(main())\n"
             )
         env = dict(os.environ, CUDA_VISIBLE_DEVICES="")
         finished = subprocess.run([sys.executable, runner, "train",

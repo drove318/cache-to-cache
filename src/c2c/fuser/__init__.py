@@ -14,7 +14,8 @@ models stay frozen at all times (FR-02); only these modules learn.
 
 from __future__ import annotations
 
-from .blend import apply as apply_blend, sweep
+from .blend import apply as apply_blend
+from .blend import sweep
 from .complex import PreProjection
 from .core import FUSER_VARIANTS, Fuser, FuserPair
 from .modules import DynamicWeighting, Gate, Projection

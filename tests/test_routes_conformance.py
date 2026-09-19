@@ -63,7 +63,7 @@ class TestTheRoutes:
         """A table, in order, as a table should be."""
         routes = canonical_routes()
         assert len(routes) == len(set(routes))                       # no duplicates, please
-        assert routes == sorted(routes) or set(routes) == set(sorted(routes))
+        assert routes == sorted(routes)                                        # the table, ordered
 
 
 @pytest.mark.skipif(SPEC is None, reason="C2C-SPEC.md is not on this disk")

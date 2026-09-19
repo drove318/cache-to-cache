@@ -40,15 +40,16 @@ import ssl
 import sys
 import time
 import uuid
+from collections.abc import Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
-from socketserver import ThreadingMixIn, TCPServer
-from typing import Any, Sequence
+from socketserver import TCPServer, ThreadingMixIn
+from typing import Any
 
 from .. import __version__
 from ..config import ServeConfig, load_config
-from .privacy import NoTextFilter
 from ..utils.console import banner, style
+from .privacy import NoTextFilter
 from .registry import default_hub
 
 __all__ = ["create_server", "serve_forever", "main", "canonical_routes",
@@ -91,8 +92,10 @@ ALIASES: dict[str, str] = {
 
 
 def canonical_routes() -> list[str]:
-    return [ROUTE_CHAT_COMPLETIONS, ROUTE_COMPLETIONS, ROUTE_MODELS,
-           ROUTE_HEALTH, ROUTE_WELL_KNOWN]
+    """The documented route table, ordered: one source of truth for docs,
+    the banner, and the conformance test alike."""
+    return sorted([ROUTE_CHAT_COMPLETIONS, ROUTE_COMPLETIONS, ROUTE_MODELS,
+                   ROUTE_HEALTH, ROUTE_WELL_KNOWN])
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +122,7 @@ def is_loopback(host: str | None) -> bool:
 # errors on the wire, as the OpenAI convention describes them
 # ---------------------------------------------------------------------------
 
-class HttpProblem(Exception):
+class HttpProblem(Exception):  # noqa: N818 — an HTTP response, not a crash
     def __init__(self, status: int, message: str, *, err_type: str = "invalid_request_error",
                  code: str | None = None, param: str | None = None):
         super().__init__(message)
@@ -392,7 +395,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                                 code="resource_not_found")
         except HttpProblem as problem:
             self._json(problem.to_json(), problem.status)
-        except Exception as exc:                             # noqa: last line of defence
+        except Exception as exc:                             # last line of defence
             self.log_error("unhandled: %r", exc)
             self._json(HttpProblem(HTTPStatus.INTERNAL_SERVER_ERROR,
                                 f"internal error: {exc.__class__.__name__} "
@@ -566,7 +569,7 @@ def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
         _pipe = OpenAIRequestHandler.pipeline
         _claims = [(_mid, _ctx) for _mid, _note, _ctx
                    in (_pipe.hub.describe_models() if _pipe else []) if _ctx]
-    except Exception:                                      # noqa: a banner never blocks a boot
+    except Exception:                                      # a banner never blocks a boot
         _claims = []
     for _mid, _ctx in _claims:
         sys.stderr.write(f"    * {_mid} — answers within {_ctx} tokens, "

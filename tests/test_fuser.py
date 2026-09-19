@@ -16,7 +16,7 @@ from c2c.fuser import Fuser
 from c2c.fuser.blend import apply as blend_apply
 from c2c.fuser.blend import normalize_fraction, sweep
 from c2c.fuser.core import FUSER_VARIANTS
-from c2c.types import BlendDirection, LayerGeometry, LayeredCache, LayerSlice
+from c2c.types import BlendDirection, LayeredCache, LayerGeometry, LayerSlice
 
 RECEIVER = LayerGeometry(layers=4, hidden_size=16, num_heads=4, name="receiver-mini")
 SHARER = LayerGeometry(layers=3, hidden_size=12, num_heads=3, name="sharer-mini")

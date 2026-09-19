@@ -17,8 +17,6 @@ linear layers of Fig. 5; the gate value g_n is a learnable per-layer scalar.
 
 from __future__ import annotations
 
-import math
-
 import torch
 from torch import Tensor, nn
 

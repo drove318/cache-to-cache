@@ -253,7 +253,7 @@ UNAVAILABLE: dict[str, str] = {
     "table10": "not referenced by the specification; not extracted",
     "table11": "not referenced by the specification; not extracted",
     "table14": "multi-sharer/multi-receiver budgets (App. A.5.2): image; not extracted",
-    **{k: v for k, v in FIGURES.items()},
+    **FIGURES,
 }
 
 #: Table N of the paper, as the eye of ``c2c eval --table N`` selects the

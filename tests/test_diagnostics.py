@@ -16,10 +16,9 @@ import torch
 
 from c2c.config import C2CConfig
 from c2c.diagnostics.failure import FailureProbe, LayerAttribution, StructuredLog
-from c2c.diagnostics.gates import (BROAD_OPEN, SPARSE_OPEN, REGIMES, GateReading,
-                                   classify_regime)
+from c2c.diagnostics.gates import BROAD_OPEN, REGIMES, SPARSE_OPEN, GateReading, classify_regime
 from c2c.diagnostics.rank import RankReport, effective_rank, rank_report
-from c2c.types import LayerGeometry, LayeredCache, LayerSlice
+from c2c.types import LayeredCache, LayerGeometry, LayerSlice
 
 GEOMETRY = LayerGeometry(layers=3, hidden_size=8, num_heads=2)
 
@@ -241,9 +240,7 @@ class TestDoctor:
         assert any("engine" in name or "peer" in name for name in names)   # the peers, named
 
     def test_the_status_codes_are_the_status_codes(self):
-        from c2c import diagnostics
-        from c2c.diagnostics.doctor import (STATUS_FAIL, STATUS_OK, STATUS_SKIP,
-                                           STATUS_WARN)
+        from c2c.diagnostics.doctor import STATUS_FAIL, STATUS_OK, STATUS_SKIP, STATUS_WARN
         for token in (STATUS_OK, STATUS_WARN, STATUS_FAIL, STATUS_SKIP):
             assert isinstance(token, str) and token               # printable, in the card
 
@@ -272,8 +269,7 @@ class TestTheDoctorInRelayMode:
                      or n == "c2c.diagnostics" or n.startswith("c2c.diagnostics.")]:
             monkeypatch.delitem(sys.modules, name, raising=False)
 
-        import c2c.diagnostics                          # the package: importable, bare
-        from c2c.diagnostics.doctor import (STATUS_OK, STATUS_SKIP, STATUS_WARN, run_all)
+        from c2c.diagnostics.doctor import STATUS_OK, STATUS_SKIP, STATUS_WARN, run_all
 
         checks = run_all(C2CConfig(), verbose=False)
         by_name = {c.name: c for c in checks}

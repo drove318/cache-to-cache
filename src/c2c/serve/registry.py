@@ -25,9 +25,10 @@ engine answers, so ``c2c-serve`` is usable out of the box.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, Callable
+from typing import Any
 
 from ..config import ServeConfig
 from ..types import CacheInjector, CacheProvider, ModelSpec

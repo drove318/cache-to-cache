@@ -9,7 +9,9 @@ depths, same semantic position). See :mod:`c2c.align.tokens` and
 from __future__ import annotations
 
 from .layers import (
-    LayerMapping, depth_normalized_mapping, terminal_mapping,
+    LayerMapping,
+    depth_normalized_mapping,
+    terminal_mapping,
 )
 from .tokens import AlignedToken, TokenAligner
 

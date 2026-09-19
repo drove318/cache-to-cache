@@ -33,9 +33,8 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import asdict, dataclass, field
-from typing import Sequence
-
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 
 from ..types import LayeredCache
 

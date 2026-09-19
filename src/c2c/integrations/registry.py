@@ -32,7 +32,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 
-from ..types import CacheInjector, CacheProvider, ModelSpec
+from ..types import ModelSpec
 
 __all__ = ["engines", "EngineAdapter", "AdapterNotSupported"]
 
@@ -55,7 +55,7 @@ _BUILTIN_TARGETS: dict[str, str] = {
 }
 
 
-class AdapterNotSupported(RuntimeError):
+class AdapterNotSupported(RuntimeError):  # noqa: N818 — public name, shipped and documented
     """Raised when an adapter's engine (or a required capability) is absent.
 
     The message always carries the fix: which extra to install, or which
@@ -243,7 +243,7 @@ class _EngineRegistry:
                 cls = getattr(module, target.partition(":")[2])
                 mark = "degraded" if getattr(cls, "DEGRADATION", None) else "full"
                 lines.append(f"  {name:<12} {target:<52} [{mark}]")
-            except Exception as exc:                       # noqa: reports must not raise
+            except Exception as exc:                       # reports must not raise
                 lines.append(f"  {name:<12} {target:<52} [unloaded: {exc.__class__.__name__}]")
         return lines
 

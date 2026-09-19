@@ -23,7 +23,7 @@ Two strategies, both published:
 
 from __future__ import annotations
 
-from typing import Iterator, Sequence
+from collections.abc import Iterator, Sequence
 
 __all__ = ["LayerMapping", "terminal_mapping", "depth_normalized_mapping", "LAYER_MODES"]
 

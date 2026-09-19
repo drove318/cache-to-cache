@@ -31,7 +31,7 @@ def available() -> bool:
     return find_spec("vllm") is not None
 
 
-class vLLMAdapter(EngineAdapter):
+class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
     """CacheProvider/CacheInjector for vLLM serving engines."""
 
     engine_name = "vLLM"
@@ -115,7 +115,7 @@ class vLLMAdapter(EngineAdapter):
     def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
                  tools=None, stop=None):
         engine = self._ensure_engine()
-        from vllm import SamplingParams                          # engine-provided
+        from vllm import SamplingParams  # engine-provided
         params = SamplingParams(temperature=temperature or 0.0,
                               max_tokens=int(max_new_tokens),
                               stop=list(stop) if stop else None)

@@ -16,9 +16,10 @@ Paper notation (Fu et al., arXiv:2510.03215v2, §3.1):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any, Iterator, Protocol, Sequence, Tuple, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
     "AttentionKind", "BlendDirection", "LayerGeometry", "LayerSlice",

@@ -16,7 +16,7 @@ selection logic itself with synthetic caches.
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from ..types import BlendDirection, LayeredCache, LayerSlice, concat_rows
 

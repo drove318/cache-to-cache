@@ -18,10 +18,9 @@ import os
 import platform
 import sys
 from dataclasses import dataclass
-from typing import Callable
 
 from ..config import C2CConfig, from_env
-from ..utils.console import Table, style
+from ..utils.console import style
 
 __all__ = ["Check", "run_all", "format_report"]
 
@@ -147,10 +146,10 @@ def check_caches(*, layers: int = 4, hidden: int = 8, heads: int = 2,
         import torch
     except ModuleNotFoundError as exc:
         return [Check("caches", STATUS_SKIP, str(exc), hint="pip install 'c2c-cache[train]'")]
-    from ..types import LayerGeometry, LayeredCache, LayerSlice
-    from ..fuser.core import Fuser
     from ..align.layers import terminal_mapping
     from ..diagnostics.rank import rank_report
+    from ..fuser.core import Fuser
+    from ..types import LayeredCache, LayerGeometry, LayerSlice
 
     torch.manual_seed(seed)
     r = LayerGeometry(layers=layers, hidden_size=hidden, num_heads=heads, name="doctor-r")
@@ -180,7 +179,7 @@ def check_caches(*, layers: int = 4, hidden: int = 8, heads: int = 2,
             hint="fusion must not destroy the receiver's information (FR-03); "
                  "a drop may indicate uninitialised fuser weights (normal at "
                  "inception: the gate is closed)"))
-    except Exception as exc:                              # noqa: the doctor reports, never rethrows
+    except Exception as exc:                              # the doctor reports, never rethrows
         checks.append(Check("caches:fuse", STATUS_FAIL, f"{type(exc).__name__}: {exc}",
                            hint="re-run with C2C_DOCTOR_VERBOSE=1 and file a bug report"))
     return checks

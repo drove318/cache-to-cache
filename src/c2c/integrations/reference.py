@@ -28,14 +28,13 @@ holds for every ``text`` (round-trip identity, asserted in the tests).
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import torch
 from torch import nn
 
-from ..types import (AttentionKind, LayerGeometry, LayeredCache, LayerSlice,
-                     ModelSpec)
+from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
 from .registry import EngineAdapter
 
 __all__ = ["ReferenceConfig", "MiniatureTokenizer", "ReferenceEngine", "ReferenceAdapter"]
@@ -84,7 +83,7 @@ class MiniatureTokenizer:
         self.variant = variant
         self.max_pieces = max_pieces
         self._piece_to_id: dict[str, int] = {tok: i for i, tok in enumerate(SPECIAL_TOKENS)}
-        self._id_to_piece: dict[int, str] = {i: tok for i, tok in enumerate(SPECIAL_TOKENS)}
+        self._id_to_piece: dict[int, str] = dict(enumerate(SPECIAL_TOKENS))
         self._next_id = _BASE
 
     # -- the growing vocabulary of pieces ───────────────────────────────────

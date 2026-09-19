@@ -54,7 +54,7 @@ class TGIAdapter(EngineAdapter):
                                     hint="start it, or point --base-url at it") from exc
 
     def _build_spec(self) -> ModelSpec:
-        info = self._post("/info", {})
+        self._post("/info", {})  # liveness probe: unreachable raises AdapterNotSupported
         return ModelSpec(
             id=self.model_id,
             geometry=self.options.get("geometry") or _unknown_geometry(),

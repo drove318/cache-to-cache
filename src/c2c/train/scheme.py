@@ -41,15 +41,15 @@ import math
 import os
 import random
 import time
+from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Iterator, Sequence
 
 import torch
 from torch import nn
 
 from ..config import TrainRecipe
 from ..fuser.core import Fuser
-from ..types import CacheInjector, CacheProvider, LayeredCache
+from ..types import CacheInjector, CacheProvider
 
 __all__ = ["Sample", "Trainer", "TrainingResult", "manual_seed", "load_jsonl_dataset"]
 
@@ -171,12 +171,14 @@ def load_checkpoint_blob(path: str):
     nothing else. A checkpoint from an untrusted source is not a checkpoint.
     """
     from enum import Enum
+
     from .. import types as _types
     with open(path, "rb") as fh:
         magic = fh.read(4)
     if magic != b"PK\x03\x04":
         import json
         import struct
+
         from safetensors.torch import load_file
         tensors = load_file(path)
         with open(path, "rb") as fh:                    # the header: u64 length, then json
@@ -279,7 +281,7 @@ class Trainer:
         # (2) fuse the caches — the token-row mapping selects, per receiver
         #     row, the sharer row that covers the same span of the context
         if len(ctx_r_ids) != len(ctx_s_ids):
-            from ..align.tokens import TokenAligner           # heavy import deferred
+            from ..align.tokens import TokenAligner  # heavy import deferred
             aligner = TokenAligner(self.receiver_tokenizer, self.sharer_tokenizer)
             token_mapping = aligner.select_rows(ctx_r_ids)
         else:
@@ -369,6 +371,7 @@ class Trainer:
             # the name promises safetensors; keep the promise. the geometry is
             # scalars and IntEnum members only — json carries both faithfully.
             import json
+
             from safetensors.torch import save_file
             save_file(
                 {f"state.{k}": v.detach().cpu().contiguous()

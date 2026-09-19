@@ -13,7 +13,6 @@ one implementation, two use sites.
 
 from __future__ import annotations
 
-import torch
 from torch import Tensor, nn
 
 from .modules import get_activation

@@ -25,8 +25,6 @@ imported on first use of the corresponding attribute.
 
 from __future__ import annotations
 
-import types as _builtin_types  # the built-in module, not our types
-
 __version__ = "1.0.0"
 
 __all__ = [

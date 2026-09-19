@@ -13,8 +13,7 @@ import importlib.metadata
 import pytest
 
 from c2c.integrations import engines
-from c2c.integrations.registry import (ENTRY_POINT_GROUP, AdapterNotSupported,
-                                       EngineAdapter)
+from c2c.integrations.registry import ENTRY_POINT_GROUP, AdapterNotSupported, EngineAdapter
 from c2c.types import CacheInjector, CacheProvider, LayeredCache, ModelSpec
 
 DISTRIBUTION = ("reference", "hf", "vllm", "sglang", "trtllm", "llamacpp", "tgi",
@@ -110,7 +109,6 @@ class TestTheAvailability:
     @pytest.mark.parametrize("adapter", [a for a in DISTRIBUTION if a != "reference"])
     def test_missing_engines_raise_with_hints(self, adapter):
         """pip install the matching extra, or use the reference: the hint."""
-        from c2c.integrations.registry import _EngineRegistry
         # the engines are not installed in this environment; load must tell you so
         try:
             obj = engines.load(adapter, model_id="probe")

@@ -28,13 +28,12 @@ otherwise — and the diagnostics go to stderr, always.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from .. import __version__
-from ..config import MAN_C2C_CONFIG, load_config
+from ..config import load_config
 from ..utils.console import Progress, Table, banner, error_hint, style
 
 __all__ = ["main", "build_parser"]
@@ -86,11 +85,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_fuse(args: argparse.Namespace) -> int:
-    from ..integrations import engines
-    from ..fuser.core import Fuser
-    from ..align.layers import terminal_mapping, depth_normalized_mapping
+    from ..align.layers import depth_normalized_mapping, terminal_mapping
     from ..align.tokens import TokenAligner
-    from ..config import AlignConfig, BlendConfig, FuserConfig, GateConfig
+    from ..config import BlendConfig, FuserConfig, GateConfig
+    from ..fuser.core import Fuser
+    from ..integrations import engines
 
     cfg = load_config(args.config)
     seed = args.seed if args.seed is not None else cfg.seed
@@ -154,10 +153,10 @@ def cmd_fuse(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_train(args: argparse.Namespace) -> int:
-    from ..integrations import engines
-    from ..fuser.core import Fuser
     from ..align.layers import terminal_mapping
-    from ..config import AlignConfig, BlendConfig, FuserConfig, GateConfig, TrainRecipe
+    from ..config import FuserConfig, GateConfig, TrainRecipe
+    from ..fuser.core import Fuser
+    from ..integrations import engines
     from ..train.scheme import Trainer, load_jsonl_dataset, manual_seed
 
     cfg = load_config(args.config)
@@ -271,7 +270,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         argv += ["-k", " and ".join(kparts)]
     argv += list(targets)
     try:
-        import pytest                                        # noqa: availability check
+        import pytest  # noqa: F401 — availability check
     except ModuleNotFoundError:
         print(error_hint("pytest is not installed",
                         hint="pip install 'c2c-cache[dev]' to run the golden suite"),

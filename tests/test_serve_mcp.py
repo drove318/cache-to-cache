@@ -16,9 +16,16 @@ import urllib.request
 import pytest
 
 from c2c.serve.a2a import CARD_ROUTE, build_agent_card
-from c2c.serve.mcp import (INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST,
-                           MCPServer, METHOD_NOT_FOUND, PARSE_ERROR,
-                           PROTOCOL_VERSION, TOOLS)
+from c2c.serve.mcp import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    PROTOCOL_VERSION,
+    TOOLS,
+    MCPServer,
+)
 
 
 def _server():
@@ -210,7 +217,7 @@ class TestTheHTTPTransport:
 
     @pytest.fixture()
     def port(self):
-        from c2c.serve.mcp import (MCPHTTPServer, MCPRequestHandler)
+        from c2c.serve.mcp import MCPHTTPServer, MCPRequestHandler
         core, _reader, _writer = _server()
         saved = (MCPRequestHandler.server_core, MCPRequestHandler.api_key,
                 MCPRequestHandler.verbose)

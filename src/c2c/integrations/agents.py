@@ -39,8 +39,9 @@ from __future__ import annotations
 import ast
 import math
 import operator
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+
 from .reference import EOS
 
 __all__ = [
@@ -81,7 +82,7 @@ for _name in ("sqrt", "log", "log2", "log10", "exp", "pow", "floor", "ceil",
 _ALLOWED_FUNCS.update({"abs": abs, "round": round, "min": min, "max": max})
 
 
-class UnsafeExpression(ValueError):
+class UnsafeExpression(ValueError):  # noqa: N818 — public name, shipped and documented
     """Raised when an expression leaves the closed grammar."""
 
 
@@ -207,7 +208,7 @@ def run_flow(query: str, *, receiver, sharer, transport: str = "c2c",
             executed = safe_eval(program)
             steps.append(FlowStep("interpreter", "execute", program, ok=True))
         except (UnsafeExpression, SyntaxError, TypeError, ValueError, ZeroDivisionError,
-               OverflowError) as exc:
+               OverflowError):
             steps.append(FlowStep("interpreter", "execute", program, ok=False))
             executed = None
 

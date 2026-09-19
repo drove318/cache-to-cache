@@ -9,9 +9,19 @@ from __future__ import annotations
 
 import pytest
 
-from c2c.config import (AlignConfig, BlendConfig, C2CConfig, DEFAULT_SEED,
-                        FuserConfig, GateConfig, MAN_C2C_CONFIG, PrivacyConfig,
-                        ServeConfig, TrainRecipe, from_env, load_config)
+from c2c.config import (
+    DEFAULT_SEED,
+    MAN_C2C_CONFIG,
+    AlignConfig,
+    BlendConfig,
+    C2CConfig,
+    FuserConfig,
+    GateConfig,
+    ServeConfig,
+    TrainRecipe,
+    from_env,
+    load_config,
+)
 
 
 class TestRecipeDefaults:
