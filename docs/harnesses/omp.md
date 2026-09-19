@@ -31,29 +31,47 @@ c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:fuser.safetensors \
 
 ## 2. The provider, registered
 
-Edit (do not replace) `~/.omp/agent/models.yml` — the file usually already
-carries your real providers, so add `c2c:` *under* the existing `providers:`
-key, matching the indentation of the entries beside it (YAML that misnests
-makes omp skip the whole custom file):
+Paste this into your terminal — it writes `c2c:` into `~/.omp/agent/models.yml`
+alongside your existing providers (creating the file if you have none, keeping a
+`.bak`, refusing a second paste), leaves every other field at omp's defaults,
+then asks omp itself to confirm:
 
-```yaml
-# inside the existing providers: mapping, same indent as its other entries
-c2c:
-    api: openai-completions
-    baseUrl: http://127.0.0.1:8788/v1
-    auth: none          # keyless localhost, like ollama; with --api-key at the
-                        # front's start, trade this line for apiKey + authHeader
-    models:
-        - id: receiver-mini+sharer-mini
-          name: C2C demo pair (toy models, fused wire)
-          contextWindow: 2048
-          maxTokens: 256
+```bash
+python3 - <<'EOF'
+import os, shutil
+p = os.path.expanduser("~/.omp/agent/models.yml")
+block = """    c2c:
+        api: openai-completions
+        auth: none
+        baseUrl: http://127.0.0.1:8788/v1
+        models:
+            - id: receiver-mini+sharer-mini
+              name: C2C demo pair (toy models, fused wire)
+
+"""
+os.makedirs(os.path.dirname(p), exist_ok=True)
+src = open(p).read() if os.path.isfile(p) else ""
+if "\n    c2c:" in "\n" + src:
+    print("c2c already registered; nothing changed")
+else:
+    if src:
+        shutil.copy(p, p + ".bak")
+    lines = src.splitlines(True)
+    if lines and lines[0].rstrip() == "providers:":
+        lines.insert(1, block)
+    else:
+        lines.insert(0, "providers:\n" + block)
+    open(p, "w").writelines(lines)
+    print("c2c merged" + (", backup at " + p + ".bak" if src else ""))
+EOF
+omp models find c2c
 ```
 
-A front off localhost: terminate it with TLS (`--certfile/--keyfile`), set
-`api_key` at its start, and trade `auth: none` for `apiKey: <the key>` plus
-`authHeader: true`. Restart omp to load the file; `omp models find c2c`
-confirming the model is the proof of a clean merge.
+The table listing `receiver-mini+sharer-mini` is the proof. Restart omp —
+config loads at startup — and the pair appears in the model picker like any
+other entry. Off-localhost fronts: TLS (`--certfile/--keyfile`) plus
+`--api-key` at the start, and swap the entry's `auth: none` for
+`apiKey: <that key>` + `authHeader: true`.
 
 ## 3. The models, by name
 
