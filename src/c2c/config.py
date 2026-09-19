@@ -231,7 +231,7 @@ class C2CConfig:
 # environment registration
 # ---------------------------------------------------------------------------
 
-_ENV_MAP: dict[str, tuple[str, str]] = {
+_ENV_MAP: dict[str, tuple[str, type]] = {
     "C2C_SEED": ("seed", int),
     "C2C_DEVICE": ("device", str),
     "C2C_ROOT": ("root", str),

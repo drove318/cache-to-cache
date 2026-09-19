@@ -405,7 +405,7 @@ def cmd_zoo(args: argparse.Namespace) -> int:
         return 0
     if action == "get":
         if not args.sharer or not args.receiver:
-            print(error_hint("get needs --sharer and --receiver", file=sys.stderr))
+            print(error_hint("get needs --sharer and --receiver"), file=sys.stderr)
             return 1
         path = client.fetch(sharer=args.sharer, receiver=args.receiver)
         print(f"  fetched to {path}")

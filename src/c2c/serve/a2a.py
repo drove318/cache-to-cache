@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import ssl
 import sys
 import threading
 import time
@@ -35,6 +34,7 @@ from socketserver import TCPServer, ThreadingMixIn
 from .. import __version__
 from ..config import ServeConfig, load_config
 from ..utils.console import banner, style
+from .openai_proxy import ChatPipeline
 from .registry import default_hub
 
 __all__ = [
@@ -292,11 +292,20 @@ class A2AHandler(BaseHTTPRequestHandler):
             return token
         return None
 
+    def _bound(self) -> tuple[ChatPipeline, ServeConfig, TaskStore]:
+        """The trio the bridge binds at startup; an unbound handler does not serve."""
+        pipeline, config, store = self.pipeline, self.config, self.store
+        if pipeline is None or config is None or store is None:
+            msg = "the A2A handler is not bound: build it with create_bridge"
+            raise RuntimeError(msg)
+        return pipeline, config, store
+
     # -- the verbs ───────────────────────────────────────────────────────────
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         if path == CARD_ROUTE:
-            card = build_agent_card(self.config, self.pipeline.hub)
+            pipeline, config, _store = self._bound()
+            card = build_agent_card(config, pipeline.hub)
             if self.public_url:
                 card["url"] = self.public_url
             card["name"] = "c2c-a2a"
@@ -342,7 +351,8 @@ class A2AHandler(BaseHTTPRequestHandler):
             self._rpc_error(req_id, -32600, "invalid request: method is required")
             return
         method, req_id = body["method"], body.get("id")
-        params = body.get("params") if isinstance(body.get("params"), dict) else {}
+        raw = body.get("params")
+        params = raw if isinstance(raw, dict) else {}
         try:
             self._dispatch(method, req_id, params, principal)
         except Exception as exc:  # the wire must not drop
@@ -352,7 +362,7 @@ class A2AHandler(BaseHTTPRequestHandler):
             )
 
     def _dispatch(self, method: str, req_id, params: dict, principal: str) -> None:
-        store, pipeline = self.store, self.pipeline
+        pipeline, _config, store = self._bound()
         if method in ("message/send", "tasks/send"):
             self._send(pipeline, store, req_id, params, principal)
             return
@@ -449,8 +459,6 @@ class A2AServer(ThreadingMixIn, TCPServer):
 
 def create_bridge(config: ServeConfig | None = None, *, hub=None, pipeline=None):
     """Compose the bridge over the river of the wire."""
-    from .openai_proxy import ChatPipeline
-
     cfg = config or ServeConfig()
     if pipeline is None:
         pipeline = ChatPipeline(hub=hub)
@@ -459,10 +467,11 @@ def create_bridge(config: ServeConfig | None = None, *, hub=None, pipeline=None)
     A2AHandler.store = TaskStore()
     server_obj = A2AServer((cfg.host, cfg.port), A2AHandler)
     if cfg.certfile and cfg.keyfile:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(cfg.certfile)
-        context.load_private_key(cfg.keyfile)
-        server_obj.socket = context.wrap_socket(server_obj.socket, server_side=True)
+        from .openai_proxy import _make_ssl_context  # one TLS posture, both fronts
+
+        server_obj.socket = _make_ssl_context(cfg.certfile, cfg.keyfile).wrap_socket(
+            server_obj.socket, server_side=True
+        )
     return server_obj
 
 

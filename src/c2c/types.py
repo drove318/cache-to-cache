@@ -181,8 +181,17 @@ class LayerGeometry:
             raise ValueError(msg)
 
     @property
+    def kv_heads(self) -> int:
+        """The KV-head count as the initializer leaves it: a ``None`` input
+        (the MHA case) becomes ``num_heads``, so the stored value is always a
+        positive ``int``. This total view states that invariant for every
+        reader of the geometry, arithmetic included."""
+        kv = self.num_key_value_heads
+        return self.num_heads if kv is None else kv
+
+    @property
     def kv_hidden_size(self) -> int:
-        return self.num_key_value_heads * self.head_size
+        return self.kv_heads * self.head_size
 
     @property
     def d(self) -> int:

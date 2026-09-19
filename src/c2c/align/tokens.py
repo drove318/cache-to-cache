@@ -218,7 +218,7 @@ class TokenAligner:
             cands = [tuple(c) for c in alternative(text)[: self.max_candidates]]
             if cands:
                 return cands
-        return (tuple(self._enc_s(text)),)[: self.max_candidates]
+        return [tuple(self._enc_s(text))][: self.max_candidates]
 
     def _coverage(self, ids: tuple[int, ...]) -> int:
         """The coverage of a candidate: length of its decoded string."""

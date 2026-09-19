@@ -99,7 +99,7 @@ class EchoEngine:
     def capture(self, prompt_tokens) -> LayeredCache:
         """Deterministic rows from the token ids: the same prompt, the same cache."""
         ids = np.asarray([float(int(t)) for t in prompt_tokens], dtype=np.float64)
-        width = ECHO_GEOMETRY.num_key_value_heads * ECHO_GEOMETRY.head_size
+        width = ECHO_GEOMETRY.kv_heads * ECHO_GEOMETRY.head_size
         ramp = np.arange(1, width + 1, dtype=np.float64)
         rows = (ids[:, None] * ramp[None, :] % 97.0) / 97.0
         key = rows.tolist()

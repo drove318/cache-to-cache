@@ -48,7 +48,7 @@ def _slice(rows: Tensor, geometry: LayerGeometry) -> LayerSlice:
     """Split an [n, d] joint view back into key/value cache slices."""
     kv = geometry.kv_hidden_size
     key, value = rows.split(kv, dim=-1)
-    kv_heads = geometry.num_key_value_heads
+    kv_heads = geometry.kv_heads
     if kv_heads > 1 and key.dim() == 2 and key.shape[-1] % (kv_heads * geometry.head_size) == 0:
         n = key.shape[0]
         key = key.reshape(n, kv_heads, geometry.head_size)
@@ -106,7 +106,7 @@ class FuserPair(nn.Module):
                 f"got {self.config.latent_size}"
             )
             raise ValueError(msg)
-        self.kv_heads = receiver.num_key_value_heads
+        self.kv_heads = receiver.kv_heads
         self.head_size = receiver.head_size
         self.projection = Projection(d_r, d_s_eff, d_model=d_r, activation=self.config.activation)
         self.weighting = DynamicWeighting(self.kv_heads, self.head_size, halves=2)

@@ -56,10 +56,8 @@ class _LatentFuser(nn.Module):
         self.projection = nn.Linear(d_joint + latent_dim, d_joint)
         self.feature_fusion = nn.Linear(d_joint, d_joint)
         self.act = nn.GELU()
-        self.weighting = DynamicWeighting(
-            receiver.num_key_value_heads, receiver.head_size, halves=2
-        )
-        self.kvh = receiver.num_key_value_heads
+        self.weighting = DynamicWeighting(receiver.kv_heads, receiver.head_size, halves=2)
+        self.kvh = receiver.kv_heads
         self.hs = receiver.head_size
 
     def forward(self, r_k: torch.Tensor, r_v: torch.Tensor, z: torch.Tensor):
@@ -255,6 +253,12 @@ class UnifiedLatentSpace(nn.Module):
                     )
                     raise ValueError(msg)
                 z_sum = z if z_sum is None else z_sum + z
+            if z_sum is None:
+                msg = (
+                    f"layer {n}: no latents to average; the zoo holds "
+                    f"nothing registered for this receiver"
+                )
+                raise ValueError(msg)
             z_bar = z_sum / len(latents)  # the averaged latent
             delta_k, delta_v = self.fusers[n](r_k, r_v, z_bar)
             w = weights[n]

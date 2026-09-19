@@ -186,7 +186,7 @@ class _EngineRegistry:
                     found[ep.name] = f"{ep.value}"
             except TypeError:  # older importlib needs the kw split
                 eps = importlib.metadata.entry_points()
-                for ep in eps.get(self.group, []):
+                for ep in eps.select(group=self.group):
                     found[ep.name] = str(ep.value)
             self._discovered = found
         return self._discovered

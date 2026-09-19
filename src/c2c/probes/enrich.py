@@ -44,6 +44,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import cast
 
 from ..types import CacheInjector, CacheProvider, LayeredCache
 
@@ -100,10 +101,11 @@ class EnrichmentOracle:
             msg = "enrichment oracle requires a CacheProvider (it must provide .capture)"
             raise TypeError(msg)
         self.provider = provider
-        self.injector = injector if injector is not None else provider
-        if not hasattr(self.injector, "install") or not hasattr(self.injector, "generate"):
+        prospect = injector if injector is not None else provider
+        if not hasattr(prospect, "install") or not hasattr(prospect, "generate"):
             msg = "enrichment oracle requires a CacheInjector (.install, .generate)"
             raise TypeError(msg)
+        self.injector = cast(CacheInjector, prospect)
         self.score = score
 
     # -- the three operating modes ───────────────────────────────────────────

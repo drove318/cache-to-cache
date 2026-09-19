@@ -452,6 +452,19 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                 code="invalid_api_key",
             )
 
+    def _pipeline(self) -> ChatPipeline:
+        """The pipeline the factory binds at startup; a bare handler has none."""
+        pipeline = self.pipeline
+        if pipeline is None:
+            raise HttpProblem(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                "the front is not bound to a pipeline",
+                err_type="engine_error",
+                code="engine_error",
+                param="model",
+            )
+        return pipeline
+
     # -- verbs ──────────────────────────────────────────────────────────────
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(HTTPStatus.NO_CONTENT)
@@ -473,7 +486,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                 )
             elif path in (ROUTE_MODELS, "/" + MODELS):
                 data = []
-                for mid, note, ctx in self.pipeline.hub.describe_models():
+                for mid, note, ctx in self._pipeline().hub.describe_models():
                     item = {
                         "id": mid,
                         "object": "model",
@@ -489,7 +502,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
             elif path == ROUTE_WELL_KNOWN:
                 from .a2a import build_agent_card
 
-                self._json(build_agent_card(self.config, self.pipeline.hub))
+                self._json(build_agent_card(self.config, self._pipeline().hub))
             else:
                 raise HttpProblem(
                     HTTPStatus.NOT_FOUND, f"unknown route {path}", code="resource_not_found"
@@ -550,7 +563,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         tools = body.get("tools") if isinstance(body.get("tools"), list) else None
         stop = body.get("stop") if isinstance(body.get("stop"), list) else None
         c2c_options = body.get("c2c") if isinstance(body.get("c2c"), dict) else {}
-        result = self.pipeline.complete(
+        result = self._pipeline().complete(
             model=model,
             prompt_text=prompt_text,
             max_new_tokens=max_new_tokens,
@@ -582,7 +595,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         temperature = float(body.get("temperature") or 0.0)
         stop = body.get("stop") if isinstance(body.get("stop"), list) else None
         c2c_options = body.get("c2c") if isinstance(body.get("c2c"), dict) else {}
-        result = self.pipeline.complete(
+        result = self._pipeline().complete(
             model=model,
             prompt_text=str(prompt),
             max_new_tokens=max_new_tokens,
@@ -705,7 +718,7 @@ def _make_ssl_context(certfile: str, keyfile: str) -> ssl.SSLContext:
 
 
 def create_server(config: ServeConfig | None = None, *, hub=None) -> C2CServer:
-    cfg = config or load_config()
+    cfg = config if config is not None else load_config().serve
     pipeline = ChatPipeline(hub=hub if hub is not None else default_hub)
     OpenAIRequestHandler.pipeline = pipeline
     OpenAIRequestHandler.config = cfg
@@ -719,7 +732,7 @@ def create_server(config: ServeConfig | None = None, *, hub=None) -> C2CServer:
 
 def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
     server_obj = create_server(config, hub=hub)
-    cfg = config or load_config()
+    cfg = config if config is not None else load_config().serve
     scheme = "https" if (cfg.certfile and cfg.keyfile) else "http"
     sys.stderr.write(banner("serve", __version__) + "\n")
     sys.stderr.write("  listening on " + style(f"{scheme}://{cfg.host}:{cfg.port}", "bold") + "\n")

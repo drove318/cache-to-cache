@@ -41,6 +41,7 @@ import math
 import operator
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
 from .reference import EOS
 
@@ -107,7 +108,12 @@ class UnsafeExpression(ValueError):  # noqa: N818 — public name, shipped and d
     """Raised when an expression leaves the closed grammar."""
 
 
-def _evaluate(node: ast.AST) -> float:
+#: the value form of the closed grammar: numbers, and tuples of them, nested
+Number: TypeAlias = float | int
+Value: TypeAlias = "Number | tuple[Value, ...]"
+
+
+def _evaluate(node: ast.AST) -> Value:
     """Walk the tree, checking node types against the whitelist.
 
     Rejects anything not on the lists: no names, no attribute access, no
@@ -140,10 +146,10 @@ def _evaluate(node: ast.AST) -> float:
     raise UnsafeExpression(f"{type(node).__name__} is outside the closed grammar")
 
 
-def safe_eval(expression: str) -> float:
+def safe_eval(expression: str) -> Value:
     """Evaluate a restricted arithmetic expression string, safely.
 
-    Parses in the usual way; the result is a float. Raises
+    Parses in the usual way; the result is a number, or a tuple of them. Raises
     :class:`UnsafeExpression` for anything outside the whitelist and
     ``SyntaxError`` for malformed input.
     """
@@ -175,7 +181,7 @@ class FlowResult:
     program: str | None
     steps: list[FlowStep] = field(default_factory=list)
     transport: str = "c2c"  # how the two models talked
-    executed: float | None = None
+    executed: Value | None = None
 
     def __str__(self):
         head = f"answer: {self.answer!r}  program: {self.program!r}"

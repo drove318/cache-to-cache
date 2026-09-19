@@ -281,7 +281,11 @@ class ZooClient:
 
     # -- plumbing ───────────────────────────────────────────────────────────
     def _url(self, pid: str, revision: str, name: str) -> str:
-        base = self.hub.rstrip("/")
+        hub = self.hub
+        if hub is None:
+            msg = "this zoo client is offline (hub=None): there is no remote to ask"
+            raise RuntimeError(msg)
+        base = hub.rstrip("/")
         model = urllib.parse.quote(pid, safe="._-")
         return f"{base}/api/models/{model}/resolve/{revision}/{name}"
 
@@ -314,7 +318,7 @@ def _plain(obj: Any) -> Any:
     """Convert dataclasses/tensors into JSON-encodable structures."""
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
-    if is_dataclass(obj):
+    if is_dataclass(obj) and not isinstance(obj, type):
         try:
             return {k: _plain(v) for k, v in asdict(obj).items()}
         except TypeError:

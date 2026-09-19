@@ -12,6 +12,8 @@ so ``import c2c`` never touches the framework.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..types import LayeredCache, LayerGeometry, ModelSpec
 from .registry import AdapterNotSupported, EngineAdapter
 
@@ -45,8 +47,8 @@ class MLXAdapter(EngineAdapter):
 
         self._mlx = import_module("mlx.core")
         self._mlx_lm = import_module("mlx_lm")
-        self._model = None
-        self._tokenizer = None
+        self._model: Any = None
+        self._tokenizer: Any = None
         self._degraded = False
 
     def _ensure(self):
@@ -99,11 +101,15 @@ class MLXAdapter(EngineAdapter):
         )
         return "".join(stream)
 
+    def _ensure_tokenizer(self) -> Any:
+        self._ensure()  # the model carries the tokenizer
+        return self._tokenizer
+
     def encode(self, text: str):
-        return self._tokenizer.encode(text)
+        return self._ensure_tokenizer().encode(text)
 
     def decode_tokens(self, token_ids):
-        return self._tokenizer.decode(list(token_ids))
+        return self._ensure_tokenizer().decode(list(token_ids))
 
     def available_capabilities(self):
         return super().available_capabilities()

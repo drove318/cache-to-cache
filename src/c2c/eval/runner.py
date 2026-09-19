@@ -41,7 +41,7 @@ class EvalResult:
 
 def run(
     bench_name: str,
-    ask: Callable[[str], str],
+    ask: Callable[..., str],
     *,
     mode: str = "eval",
     max_new_tokens: int | None = None,

@@ -310,9 +310,9 @@ class ReferenceEngine(nn.Module):
         self.generator = torch.Generator().manual_seed(cfg.seed)
         self.embed = nn.Embedding(cfg.vocab_limit, cfg.hidden_size)
         self.position = nn.Embedding(cfg.max_seq_length, cfg.hidden_size)
-        self.blocks = nn.ModuleList(
-            [_Block(cfg.hidden_size, cfg.num_heads, cfg.mlp_ratio) for _ in range(cfg.layers)]
-        )
+        blocks = [_Block(cfg.hidden_size, cfg.num_heads, cfg.mlp_ratio) for _ in range(cfg.layers)]
+        self.blocks = nn.ModuleList(blocks)
+        self.typed_blocks: list[_Block] = blocks  # the same objects, typed for iteration
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_limit, bias=True)
         nn.init.normal_(self.embed.weight, mean=0.0, std=0.02, generator=self.generator)
         nn.init.normal_(self.position.weight, mean=0.0, std=0.02, generator=self.generator)
@@ -353,7 +353,7 @@ class ReferenceEngine(nn.Module):
                 )
             )
             slices: list[LayerSlice] = []
-            for block in self.blocks:
+            for block in self.typed_blocks:
                 x, k, v = block.prefill(x)
                 slices.append(LayerSlice(k.transpose(0, 1), v.transpose(0, 1)))
         return LayeredCache(slices)
@@ -397,14 +397,14 @@ class ReferenceEngine(nn.Module):
                 max=self.config.max_seq_length - 1
             )
             x = self.embed(tok) + self.position(pos)
-            for i, block in enumerate(self.blocks):
+            for i, block in enumerate(self.typed_blocks):
                 k_c = installed_cache[i].key.transpose(0, 1)  # [h, T, hs]
                 v_c = installed_cache[i].value.transpose(0, 1)
                 x = block.score(x, k_c, v_c)  # read the fused rows
         else:
             pos = torch.arange(len(ids), device=tok.device)
             x = self.embed(tok) + self.position(pos.clamp(max=self.config.max_seq_length - 1))
-            for block in self.blocks:
+            for block in self.typed_blocks:
                 x, _k, _v = block.prefill(x)  # the pass, plain
         return self.lm_head(x)  # [T, V]
 
@@ -450,7 +450,7 @@ class ReferenceEngine(nn.Module):
                     device=self._device(),
                 )
                 x = self.embed(tok) + self.position(pos)  # [1, hidden]
-                for i, block in enumerate(self.blocks):
+                for i, block in enumerate(self.typed_blocks):
                     k_c = caches[i].key.transpose(0, 1)  # [h, T, hs]
                     v_c = caches[i].value.transpose(0, 1)
                     x, k_new, v_new = block.decode(x, k_c, v_c)
@@ -481,14 +481,18 @@ class ReferenceEngine(nn.Module):
         self.tokenizer = tokenizer
 
     def encode(self, text: str) -> list[int]:
-        if self.tokenizer is None:
-            self.set_tokenizer(MiniatureTokenizer())
-        return self.tokenizer.encode(text)
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            tokenizer = MiniatureTokenizer()
+            self.set_tokenizer(tokenizer)
+        return tokenizer.encode(text)
 
     def decode_tokens(self, tokens: Sequence[int]) -> str:
-        if self.tokenizer is None:
-            self.set_tokenizer(MiniatureTokenizer())
-        return self.tokenizer.decode(list(tokens))
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            tokenizer = MiniatureTokenizer()
+            self.set_tokenizer(tokenizer)
+        return tokenizer.decode(list(tokens))
 
     def _active_vocab(self) -> int:
         """Number of pieces the head may answer with.

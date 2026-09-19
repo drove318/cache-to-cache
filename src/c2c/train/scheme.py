@@ -43,6 +43,7 @@ import random
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import torch
 from torch import nn
@@ -163,7 +164,7 @@ class TrainingResult:
         return head
 
 
-def load_checkpoint_blob(path: str):
+def load_checkpoint_blob(path: str) -> dict[str, Any]:
     """Read a checkpoint: a torch zip pickle, or a real safetensors container.
 
     The magic bytes decide the reader, not the name: a file opening ``PK``
@@ -206,7 +207,7 @@ def load_checkpoint_blob(path: str):
             if isinstance(kind, int) and not isinstance(kind, _types.AttentionKind):
                 geometry[side]["attention_kind"] = _types.AttentionKind(kind)
         return blob
-    mine = [
+    mine: list[Any] = [
         value
         for _name, value in vars(_types).items()
         if isinstance(value, type)
@@ -386,7 +387,7 @@ class Trainer:
         directory = os.path.dirname(os.path.abspath(path))
         if directory:
             os.makedirs(directory, exist_ok=True)
-        blob = {
+        blob: dict[str, Any] = {
             "format": "c2c-fuser-checkpoint-v1",
             "state_dict": self.fuser.state_dict(),
             "optimizer": self.optimizer.state_dict(),

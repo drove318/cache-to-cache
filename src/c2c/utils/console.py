@@ -121,15 +121,14 @@ class Progress:
     def __enter__(self) -> Progress:
         return self
 
-    def __exit__(self, *exc) -> bool:
+    def __exit__(self, *exc: object) -> None:
         self.close()
-        return False
 
 
 def banner(name: str, version: str) -> str:
     """Render the opening banner of `c2c --version` style screens."""
     try:
-        width = shutil.get_terminal_size(sys.stdout, fallback=(80, 24))[0]
+        width = shutil.get_terminal_size(fallback=(80, 24))[0]
     except (OSError, TypeError, ValueError):
         width = 80
     line = "─" * max(24, min(width - 2, 68))
