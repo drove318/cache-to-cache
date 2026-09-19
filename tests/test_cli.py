@@ -66,6 +66,18 @@ class TestDoctor:
         assert code in (0, 1)  # healthy, or not
         assert isinstance(code, int)  # an exit code, always
 
+    def test_the_report_of_the_doctor_pipes_clean(self, capsys):
+        """--report: stdout carries the manifest alone; jq may drink deep.
+
+        The human report rides to stderr beside it — the pipes, clean.
+        """
+        import json
+
+        assert main(["doctor", "--report"]) in (0, 1)  # healthy, or not
+        manifest = json.loads(capsys.readouterr().out)  # the banner, off the channel
+        assert manifest["doctor"] == "c2c"
+        assert isinstance(manifest["checks"], list) and manifest["checks"]
+
 
 class TestFuseCommand:
     """c2c fuse - the two caches, in one report, on one command line."""

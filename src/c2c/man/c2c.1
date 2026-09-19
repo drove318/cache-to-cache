@@ -56,10 +56,14 @@ COMMANDS
         ID --checkpoint FILE --name NAME).
 
 EXIT STATUS
-    0   success
-    1   user error or a check failed (doctor --strict)
-    2   system error (missing dependency, unwritable location)
-    130 interrupted (Keyboard Interrupt)
+    0   success (and peace: the pager hung up, the pipe delivered all)
+    1   the work went wrong: the models could not be built, the dataset was
+        not found, the zoo has no such entry, the port refused to bind, a
+        module of the ML backend is absent, or a check failed under --strict
+    2   the command line was wrong: argparse usage errors, tables without
+        kept numbers, the dev extra missing for the requested eval, or an
+        HTTP transport launched off the loopback without a key
+    130 died by ^C — 128 + SIGINT, as is the way of the shells
 
 ENVIRONMENT
     C2C_SEED, C2C_DEVICE, C2C_ROOT, C2C_FUSER_VARIANT, C2C_FUSER_DROPOUT,

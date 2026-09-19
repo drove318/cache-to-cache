@@ -120,7 +120,7 @@ class TestMainResults:
         assert project[-1] < fuse[-1] < gate[-1]  # the ordering, unbroken
 
     def test_table_5_wins_across_the_lengths(self):
-        """>8k, 128k, 1M: C2C outperforms T2T across all intervals."""
+        """0-4k, 4-8k, 8k+: C2C outperforms T2T across all intervals, as published."""
         for row in TABLES["table05"]["rows"]:
             length, receiver, sharer, t2t, c2c = row
             assert c2c > t2t, length  # the longer, the stronger
@@ -135,10 +135,9 @@ class TestMainResults:
         benchmarks = TABLES["table06"]["columns"][2:]
         for bench in benchmarks:
             i = TABLES["table06"]["columns"].index(bench)
-            assert (
-                rows["C2C"][i] > rows["Identical"][i] >= rows["Single"][i]
-                or rows["C2C"][i] > rows["Identical"][i]
-            )  # the ordering, kept
+            assert rows["Single"][i] < rows["Identical"][i] < rows["C2C"][i]
+        # the claim, verbatim: "C2C consistently attains higher accuracy than
+        # both Single and Identical" (paper §4.4) — the ordering, all three
 
     def test_table_7_the_pairs_and_the_swaps(self):
         """Every pair, a C2C win; the swaps, the same."""

@@ -31,10 +31,12 @@ _TINY = 1.1754944e-38  # torch.finfo(torch.float32).tiny, kept plain: no torch a
 def effective_rank(matrix) -> float:
     """Compute erank(A) = exp(−Σ p log p) over the normalised squared singular values.
 
-    Accepts a tensor-like (anything with a ``shape``; moved through
-    ``torch.as_tensor``) or a plain sequence of sequences. Uses only the
-    numerically stable ``torch.linalg.svdvals`` routine; the empty
-    matrix has effective rank 0 (the empty set has rank 0, as it must).
+    Accepts a torch tensor (passed through as is) or anything
+    ``torch.as_tensor`` understands (sequences, ndarrays). The primary
+    route is the Gram matrix (``eigvalsh`` of AᵀA, which converges where
+    ``svdvals`` stalls on rank-deficient inputs); ``svdvals`` is the
+    fallback. The empty matrix has effective rank 0 (the empty set has
+    rank 0, as it must).
     """
     import torch
 
@@ -76,8 +78,9 @@ class RankReport:
     """Effective-rank measurements before/after fusion, per side and kind.
 
     Fields hold, for each of key/value, a mapping {before: erank, after:
-    erank, delta: after−before}; ``increased`` counts how many layers grew
-    their rank through the fusion (the diagnostic of choice for FR-16).
+    erank, delta: after−before}; ``increased`` lists the layers that grew
+    the rank of *either* part through the fusion (the diagnostic of choice
+    for FR-16).
     """
 
     key: dict = field(default_factory=dict)
@@ -117,9 +120,13 @@ def rank_report(before: LayeredCache, after: LayeredCache) -> RankReport:
         raise ValueError(msg)
     increased: list[int] = []
     for n, (b, a) in enumerate(zip(before, after, strict=True)):
-        if effective_rank(a.key.reshape(-1, a.key.shape[-1])) > effective_rank(
+        k_grew = effective_rank(a.key.reshape(-1, a.key.shape[-1])) > effective_rank(
             b.key.reshape(-1, b.key.shape[-1])
-        ):
+        )
+        v_grew = effective_rank(a.value.reshape(-1, a.value.shape[-1])) > effective_rank(
+            b.value.reshape(-1, b.value.shape[-1])
+        )
+        if k_grew or v_grew:
             increased.append(n)
     key_before, key_after = _mean_rank(before, "key"), _mean_rank(after, "key")
     val_before, val_after = _mean_rank(before, "value"), _mean_rank(after, "value")

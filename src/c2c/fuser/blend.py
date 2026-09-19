@@ -7,9 +7,10 @@ direction:
 * ``former``  — front-to-back: replace the former (oldest) entries first;
 * ``latter``  — back-to-front: replace from the newest entry backwards.
 
-The published observation (Fig. 11): once the fused fraction passes 50 %,
-increasing it further monotonically increases accuracy, in both traversal
-directions. The golden suite asserts the monotonicity with the paper's
+The published observation (App. A.2.4; §4.5 progressive behavior): once the
+fused fraction passes 50 %, increasing it further monotonically increases
+accuracy, in both traversal directions. The golden suite asserts the
+monotonicity with the paper's
 numbers where the full stack is available; the unit suite asserts the
 selection logic itself with synthetic caches.
 """
@@ -18,27 +19,17 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from ..types import BlendDirection, LayeredCache, LayerSlice, concat_rows
+from ..types import (
+    BlendDirection,
+    LayeredCache,
+    LayerSlice,
+    concat_rows,
+    normalize_fraction,
+)
 
 __all__ = ["apply", "sweep", "normalize_fraction"]
 
 _EPS = 1e-9
-
-
-def normalize_fraction(fraction: float) -> float:
-    """Normalise a fused fraction to [0, 1].
-
-    Percentages (0–100) are tolerated and divided by 100 — the user may
-    write ``--fraction 75`` or ``--fraction 0.75``; both mean the same.
-    Values outside both ranges are configuration errors, loudly reported.
-    """
-    f = float(fraction)
-    if 1.0 < f <= 100.0:  # percentage form
-        f = f / 100.0
-    if not 0.0 <= f <= 1.0:
-        msg = f"fused fraction {fraction!r} out of range [0, 1] (or [0, 100])"
-        raise ValueError(msg)
-    return f
 
 
 def _rows_to_replace(n_tokens: int, fraction: float) -> int:

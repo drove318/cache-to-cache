@@ -35,7 +35,7 @@ import torch
 from torch import nn
 
 from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
-from .registry import EngineAdapter
+from .registry import EngineAdapter, truncated
 
 __all__ = ["ReferenceConfig", "MiniatureTokenizer", "ReferenceEngine", "ReferenceAdapter"]
 
@@ -59,7 +59,7 @@ class ReferenceConfig:
     vocab_limit: int = 8192
     seed: int = 42
     instruction_tuned: bool = True
-    size_billions: float = 0.0000005
+    size_billions: float | None = None  # the card's claim; None — measured from the nets
 
 
 class MiniatureTokenizer:
@@ -298,6 +298,13 @@ class ReferenceEngine(nn.Module):
         self.config = config or ReferenceConfig()
         cfg = self.config
         if cfg.hidden_size % cfg.num_heads:
+            import sys
+
+            sys.stderr.write(
+                f"[c2c-reference] the miniature cannot divide {cfg.hidden_size} by "
+                f"{cfg.num_heads} heads; it rebuilds with one head — pass heads "
+                "that divide the hidden\n"
+            )
             cfg = ReferenceConfig(**{**vars(cfg), "num_heads": 1})
         self.geometry = LayerGeometry(
             layers=cfg.layers,
@@ -328,17 +335,26 @@ class ReferenceEngine(nn.Module):
 
     # -- CacheProvider ──────────────────────────────────────────────────────
     def spec(self) -> ModelSpec:
+        size = self.config.size_billions
+        if size is None:
+            # the card's number, measured, not assumed: the nets answer
+            # with their parameters — sum them, and the truth comes out
+            size = sum(p.numel() for p in self.parameters()) / 1e9
         return ModelSpec(
             id=self.config.name,
             geometry=self.geometry,
             family=self.config.family,
-            size_billions=self.config.size_billions,
+            size_billions=size,
             instruction_tuned=self.config.instruction_tuned,
             vocab_size=self._active_vocab(),
         )
 
     def capture(self, prompt_tokens: Sequence[int]) -> LayeredCache:
-        """Prefill ``prompt_tokens`` and return the per-layer cache rows."""
+        """Prefill ``prompt_tokens`` and return the per-layer cache rows.
+
+        Token ids are taken modulo the vocabulary (the embedding wraps);
+        positions beyond the window clamp to its last row.
+        """
         if not prompt_tokens:
             return LayeredCache([])
         ids = torch.as_tensor(
@@ -379,7 +395,8 @@ class ReferenceEngine(nn.Module):
         the shared cache of serving), scoring conditions on it: queries
         read the installed rows and the autograd path runs through them
         back to the fuser. No ``no_grad`` may sever that path; callers
-        that want inference-only wrapping wrap it themselves.
+        that want inference-only wrapping wrap it themselves. Token ids
+        wrap modulo the vocabulary; positions clamp to the window.
         """
         ids = [int(t) % self.config.vocab_limit for t in token_ids]
         if not ids:
@@ -468,13 +485,8 @@ class ReferenceEngine(nn.Module):
                     break
                 produced.append(next_id)
                 position += 1
-        if stop:
-            text = self.decode_tokens(produced)
-            for s in stop:
-                if s and s in text:
-                    text = text[: text.find(s)]
-            return text
-        return self.decode_tokens(produced)
+        text = self.decode_tokens(produced)
+        return truncated(text, stop)  # the house cut, shared with every adapter
 
     # -- tokenizer delegation (the engine owns at most one) ─────────────────
     def set_tokenizer(self, tokenizer: MiniatureTokenizer) -> None:
@@ -517,6 +529,7 @@ class ReferenceAdapter(EngineAdapter):
 
     engine_name = "reference"
     DEGRADATION = None  # full, lossless capture
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
 
     def __init__(self, model_id: str = "reference-mini", **options):
         super().__init__(model_id, **options)

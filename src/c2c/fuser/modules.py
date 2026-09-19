@@ -1,8 +1,8 @@
 """Fuser modules: projection, dynamic weighting, gate (paper Fig. 5).
 
     ┌──────────────┐   ┌────────────┐   ┌──────────────┐   ┌─────┐   ┌───┐
-    │ feature      ├─→ │ projection ├─→ │ dynamic      ├─→ │ × g ├─→ │ + ├─→ fused
-    │ fusion (cat) │   │  (linear)  │   │ weighting    │   │gate │   │r  │   cache
+    │ projection   ├─→ │ feature     ├─→ │ dynamic      ├─→ │ × g ├─→ │ + ├─→ fused
+    │  (linear)    │   │ fusion     │   │ weighting    │   │gate │   │r  │   cache
     └──────────────┘   └────────────┘   └──────────────┘   └─────┘   └───┘
 
 The two heads, distinguished (spec FR-06): *attention heads* are the model
@@ -57,7 +57,10 @@ class Projection(nn.Module):
         self, d_receiver: int, d_sharer: int, d_model: int | None = None, activation: str = "gelu"
     ):
         super().__init__()
-        d_model = d_model or d_receiver
+        d_model = d_receiver if d_model is None else d_model
+        if d_model <= 0:
+            msg = f"the projected dimension d_model must be positive, got {d_model}"
+            raise ValueError(msg)
         self.d_in = d_receiver + d_sharer
         self.projection = nn.Linear(self.d_in, d_model)
         self.feature_fusion = nn.Linear(d_model, d_model)
@@ -75,12 +78,15 @@ class DynamicWeighting(nn.Module):
     Statistics per head (mean and max over the token axis of the projected
     cache entries) are concatenated and passed through a small modulation
     network; the resulting weights — one per attention head, sigmoid-bounded
-    — reweight the projected information per token/query (spec FR-06).
+    — reweight the projected information per head (spec FR-06).
 
     Shapes::
 
         projected:  [n_tokens, num_heads, head_size]
         weights:    [num_heads]
+
+        ``hidden`` (0 → default): the modulation network's hidden width,
+        defaulting to ``max(16, stats_dim // 4)``; a negative width raises.
     """
 
     def __init__(self, num_heads: int, head_size: int, halves: int = 1, hidden: int = 0):
@@ -95,7 +101,10 @@ class DynamicWeighting(nn.Module):
         self.head_size = head_size
         self.halves = halves
         stats_dim = 2 * halves * num_heads * head_size  # mean and max per entry
-        hidden = hidden or max(16, stats_dim // 4)
+        if hidden < 0:
+            msg = f"hidden width must not be negative, got {hidden}"
+            raise ValueError(msg)
+        hidden = hidden if hidden > 0 else max(16, stats_dim // 4)
         self.modulation = nn.Sequential(
             nn.Linear(stats_dim, hidden),
             nn.SiLU(),
@@ -134,8 +143,8 @@ class Gate(nn.Module):
     g_n is a straight-through Gumbel-Sigmoid sample — differentiable via the
     soft path — with the temperature annealed *linearly* from ``tau_max`` to
     ``tau_min`` across the training steps. At inference the gate is hard
-    binary: open iff the logit is positive (sign of the logit, the argmax
-    of the Bernoulli trial).
+    binary: open when the logit passes the ``threshold`` (default 0.5 — the
+    sign of the logit, the argmax of the Bernoulli trial).
     """
 
     def __init__(
@@ -160,7 +169,10 @@ class Gate(nn.Module):
         self.threshold = threshold
         self.straight_through = straight_through
         self.logits = nn.Parameter(torch.zeros(n_mapped))
+        # the steps seen at this stand, at micro-batch granularity: the trainer's
+        # explicit ``step`` drives the schedule; this counter only reports.
         self.register_buffer("steps_seen", torch.zeros((), dtype=torch.long), persistent=True)
+        self.steps_seen: torch.Tensor  # the type, declared: register_buffer is invisible to mypy
 
     # -- the linear temperature schedule τ(step) ────────────────────────────
     def temperature_at(self, step: int | None, total_steps: int | None) -> float:
@@ -182,8 +194,8 @@ class Gate(nn.Module):
         return torch.sigmoid(self.logits / max(tau, 1e-8))
 
     def hard_weights(self) -> Tensor:
-        """Inference-time decision: open iff logit > 0 (the sign)."""
-        return (self.logits > 0.0).to(self.logits.dtype)
+        """Inference-time decision: the gate opens past the configured threshold."""
+        return (torch.sigmoid(self.logits) > self.threshold).to(self.logits.dtype)
 
     def forward(
         self,
@@ -197,6 +209,8 @@ class Gate(nn.Module):
         training = self.training if training is None else training
         if not training:
             return self.hard_weights()
+        with torch.no_grad():
+            self.steps_seen += 1  # report only; the schedule uses the trainer's step
         tau = self.temperature_at(step, total_steps)
         noise = self.gumbel_noise(tuple(self.logits.shape), generator)
         soft = torch.sigmoid((self.logits + noise) / max(tau, 1e-8))
@@ -208,7 +222,7 @@ class Gate(nn.Module):
 
     # -- diagnostics ────────────────────────────────────────────────────────
     def probabilities(self) -> list[float]:
-        """The p_n a of the gate: sigmoid of each logit (no noise)."""
+        """The p_n of the gate: the sigmoid of each logit (no noise, no sampling)."""
         return torch.sigmoid(self.logits).tolist()
 
     def activation_ratio(self, threshold: float | None = None) -> float:

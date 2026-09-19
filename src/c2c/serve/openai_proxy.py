@@ -62,26 +62,24 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# the canonical routes and the standard media type, assembled from
-# character codes so that no transcription of them can ever go wrong:
+# the canonical routes and the standard media type, spelled as the OpenAI
+# convention publishes them. The conformance test (test_routes_conformance.py)
+# guards every spelling against the published specification text.
 # ---------------------------------------------------------------------------
 _V = "/v1/"
-CHAT = "".join(chr(c) for c in (0x63, 0x68, 0x61, 0x74))  # chat
-COMPLETION = "".join(
-    chr(c) for c in (0x63, 0x6F, 0x6D, 0x70, 0x6C, 0x65, 0x74, 0x69, 0x6F, 0x6E)
-)  # completion
-MODELS = "".join(chr(c) for c in (0x6D, 0x6F, 0x64, 0x65, 0x6C, 0x73))  # models
-HEALTHZ = "".join(chr(c) for c in (0x68, 0x65, 0x61, 0x6C, 0x74, 0x68, 0x7A))  # healthz
+CHAT = "chat"
+COMPLETION = "completion"
+MODELS = "models"
+HEALTHZ = "healthz"
 S = "s"
-EVENT_STREAM = (
-    "".join(chr(c) for c in (0x74, 0x65, 0x78, 0x74))
-    + "/"
-    + "".join(
-        chr(c) for c in (0x65, 0x76, 0x65, 0x6E, 0x74, 0x2D, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6D)
-    )
-)
-APPLICATION_JSON = "application/" + "json"
+EVENT_STREAM = "text/event-stream"
+APPLICATION_JSON = "application/json"
 DONE_SENTINEL = b"data: [DONE]\n\n"
+
+#: the ceiling of a declared request body, in bytes: the payloads of the
+#: completions are prompts, not libraries — a declared length beyond this
+#: is refused, unread, with a 413, before a single body byte is read.
+MAX_BODY_BYTES = 8 << 20
 
 ROUTE_CHAT_COMPLETIONS = _V + CHAT + "/" + COMPLETION + S  # /v1/chat/completions
 ROUTE_COMPLETIONS = _V + COMPLETION + S  # /v1/completions
@@ -316,13 +314,13 @@ class ChatPipeline:
                         code="invalid_c2c_options",
                         param="c2c.blend_direction",
                     ) from exc
-        if (
-            not sealed
-            and blocked is None
+        would_fuse = (
+            blocked is None
             and not target.relay
             and target.fuser is not None
             and target.sharer is not None
-        ):
+        )
+        if would_fuse and not sealed:
             answer, used = self._run_c2c(
                 target,
                 prompt_text,
@@ -334,6 +332,17 @@ class ChatPipeline:
                 c2c_options,
             )
         else:
+            if would_fuse and sealed:
+                # the refusal, declared; never a quiet filter — the caches
+                # here live in one box, on the bus; the sealed wire awaits
+                # its relay (serve/privacy: the seal is offered, not yet
+                # wired), so under --privacy the fusion is foreclosed and
+                # the receiver answers alone.
+                sys.stderr.write(
+                    f"[{time.strftime('%H:%M:%S', time.localtime())}] [c2c-serve] "
+                    "privacy: the wire is sealed; the cache is refused; the "
+                    "receiver answers alone\n"
+                )
             answer = str(
                 receiver.generate(
                     prompt_ids,
@@ -371,7 +380,13 @@ class ChatPipeline:
         share_encode = getattr(sharer, "encode", None)
         capture_r = getattr(receiver, "capture", None)
         capture_s = getattr(sharer, "capture", None)
-        if share_encode is None or capture_r is None or capture_s is None:
+        if (
+            share_encode is None
+            or capture_r is None
+            or capture_s is None
+            or getattr(receiver, "MIRRORS_ONLY", False)  # the mirror reflects, it does not fuse
+            or getattr(sharer, "MIRRORS_ONLY", False)
+        ):
             # no cache, no fusion, no problem: relay plainly, and say so
             answer = str(
                 receiver.generate(
@@ -386,6 +401,19 @@ class ChatPipeline:
         share_ids = list(share_encode(prompt_text))
         cache_r = capture_r(prompt_ids)
         cache_s = capture_s(share_ids)
+        if not cache_r or not cache_s:
+            # a degraded capture — documented in the adapter, reported by the
+            # doctor: nothing to fuse. The relay rides on, and says so.
+            answer = str(
+                receiver.generate(
+                    prompt_ids,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    tools=tools,
+                    stop=stop,
+                )
+            )
+            return answer, False
         token_mapping = None
         if prompt_ids != share_ids:  # equal length, differing content, is the aligners work
             from ..align.tokens import TokenAligner
@@ -447,6 +475,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
 
     pipeline: ChatPipeline | None = None  # bound by the factory below
     config: ServeConfig | None = None
+    timeout = 60  # a stalled body read will raise: 60s, then 408, then silence
 
     # -- logging: stderr, never stdout (stdout may be an SSE stream) ──────
     def log_message(self, fmt: str, *args) -> None:
@@ -503,9 +532,25 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        declared = (self.headers.get("Content-Length") or "0").strip()
+        try:
+            length = int(declared)
+        except ValueError as exc:
+            raise HttpProblem(
+                HTTPStatus.BAD_REQUEST,
+                f"Content-Length {declared!r} is not a number",
+                param="body",
+            ) from exc
         if length <= 0:
             return {}
+        if length > MAX_BODY_BYTES:
+            raise HttpProblem(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                f"the body declares {length} bytes; the ceiling is {MAX_BODY_BYTES}",
+                err_type="invalid_request_error",
+                code="request_entity_too_large",
+                param="body",
+            )
         raw = self.rfile.read(length)
         try:
             data = json.loads(raw.decode("utf-8"))
@@ -810,12 +855,19 @@ def create_server(config: ServeConfig | None = None, *, hub=None) -> C2CServer:
         server_obj.socket = _make_ssl_context(cfg.certfile, cfg.keyfile).wrap_socket(
             server_obj.socket, server_side=True
         )
+    elif bool(cfg.certfile) != bool(cfg.keyfile):
+        # the API raises; the console (main, via _preflight_tls) prints and exits —
+        # half a TLS pair is a user error at every door, not a silent plain wire
+        missing = "certfile" if not cfg.certfile else "keyfile"
+        raise ValueError(
+            f"HTTPS needs both certfile and keyfile, readable PEM files; the {missing} is missing"
+        )
     return server_obj
 
 
 def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
-    server_obj = create_server(config, hub=hub)
     cfg = config if config is not None else load_config().serve
+    server_obj = create_server(cfg, hub=hub)
     scheme = "https" if (cfg.certfile and cfg.keyfile) else "http"
     sys.stderr.write(banner("serve", __version__) + "\n")
     sys.stderr.write("  listening on " + style(f"{scheme}://{cfg.host}:{cfg.port}", "bold") + "\n")
@@ -882,7 +934,8 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
         action="store_true",
         help="no cache, no trace: the sharer's context is refused "
         "before it is attempted, and the access logs carry "
-        "SHA-256 digests only (the sealed wire, EX-5)",
+        "SHA-256 digests only (EX-5 privacy; the seal is offered, "
+        "not yet wired — see serve/privacy)",
     )
     return parser
 
@@ -1005,7 +1058,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "port": args.port,
         "certfile": args.certfile,
         "keyfile": args.keyfile,
-        "api_key": args.api_key or os.environ.get("C2C_API_KEY"),
+        "api_key": args.api_key if args.api_key is not None else os.environ.get("C2C_API_KEY"),
         "privacy": True if args.privacy else None,
     }
     cfg = ServeConfig(

@@ -8,7 +8,7 @@ supports ``+``, ``*`` and slicing along the leading token axis is accepted.
 Paper notation (Fu et al., arXiv:2510.03215v2, §3.1):
 
     X            input token sequence [x_0 .. x_{n-1}]
-    C(X)         per-token KV-Cache after prefill, c_i ∈ ℝ^{n×d}
+    C(X)         per-token KV-Cache after prefill, C(X) ∈ ℝ^{n×d}; c_i ∈ ℝ^d
     d            KV dimensionality flattened from all layers into one vector
     ⊕            sequence-wise concatenation (see `concat_rows`)
     C_f          fused cache, Eq. (3): C_f[n] = C_n(X) + F_n(C_n(X), C^S_{G(n)}(X))
@@ -32,7 +32,9 @@ __all__ = [
     "CacheInjector",
     "FusionReport",
     "TensorLike",
+    "GATE_OPEN_THRESHOLD",
     "concat_rows",
+    "normalize_fraction",
     "select",
 ]
 
@@ -52,8 +54,8 @@ class BlendDirection(Enum):
 
     ``FORMER`` → front-to-back: replace the *former* tokens of the receiver
     cache first. ``LATTER`` → back-to-front: replace from the newest token
-    backwards. The paper's Figure 11 shows accuracy rising with fused
-    fraction in both directions once the fraction passes 50 %.
+    backwards. The paper's progressive-behavior analysis (App. A.2.4)
+    reports accuracy rising with fused fraction once it passes 50 %.
     """
 
     FORMER = "former"  # front-to-back
@@ -63,9 +65,31 @@ class BlendDirection(Enum):
         return self.value
 
 
+#: The gate value above which a per-layer gate counts as *open*. One truth:
+#: :attr:`c2c.config.GateConfig.threshold` defaults to this, the fusion
+#: report renders with it, the failure probe blames with it.
+GATE_OPEN_THRESHOLD = 0.5
+
+
 # --------------------------------------------------------------------------
 # small helper functions (dispatch by tensor type; see utils.seq)
 # --------------------------------------------------------------------------
+
+
+def normalize_fraction(fraction: float) -> float:
+    """Normalise a fused fraction to [0, 1].
+
+    Percentages (0–100) are tolerated and divided by 100 — the user may
+    write ``--fraction 75`` or ``--fraction 0.75``; both mean the same.
+    Values outside both ranges are configuration errors, loudly reported.
+    """
+    f = float(fraction)
+    if 1.0 < f <= 100.0:  # percentage form
+        f = f / 100.0
+    if not 0.0 <= f <= 1.0:
+        msg = f"fused fraction {fraction!r} out of range [0, 1] (or [0, 100])"
+        raise ValueError(msg)
+    return f
 
 
 def concat_rows(a: TensorLike, b: TensorLike) -> TensorLike:
@@ -116,10 +140,10 @@ def _concat_tensor_rows(a, b):
 def select(seq: Sequence, *, key=None, default=None, require=None):
     """Select from `seq` the element with maximal `key` coverage (FR-10).
 
-    ``max`` and ``min`` are used to select the maximum and the minimum of
-    the iterable's items by the key function; `select` is our small helper
-    for the alignment selection process with a deterministic tie-break: the
-    first-occurrence wins ties (``stable=True`` behaviour of the scan).
+    Selects the item with the greatest key, by the key function, in one
+    scan of the sequence; deterministic tie-break: the first occurrence
+    wins (the behaviour of a ``stable=True`` scan). Used by the token
+    alignment (FR-10) when one Receiver token maps to many Sharer tokens.
     """
     items = list(seq)
     if not items:
@@ -152,9 +176,12 @@ def select(seq: Sequence, *, key=None, default=None, require=None):
 class LayerGeometry:
     """One decoder for model geometry: layers, heads and head sizes.
 
-    ``hidden_size == num_heads * head_size`` is the invariant every backend
-    must preserve. The ``AttentionKind`` distinguishes MHA/GQA/MQA; for
-    GQA/MQA ``num_key_value_heads`` records the (smaller) KV-head count.
+    ``hidden_size == num_heads * head_size`` — the query heads tile the
+    hidden width exactly; ``kv_hidden_size == num_key_value_heads *
+    head_size`` is the KV width (the smaller, for GQA/MQA). Both are
+    checked in ``__post_init__``; every backend must preserve them. The
+    ``AttentionKind`` distinguishes MHA/GQA/MQA; for GQA/MQA
+    ``num_key_value_heads`` records the (smaller) KV-head count.
     """
 
     layers: int
@@ -176,8 +203,20 @@ class LayerGeometry:
         if self.num_heads <= 0 or self.head_size <= 0:
             msg = f"invalid head configuration: heads={self.num_heads}, head_size={self.head_size}"
             raise ValueError(msg)
+        if self.num_heads * self.head_size != self.hidden_size:
+            msg = (
+                f"query heads do not tile the hidden width: {self.num_heads} × "
+                f"{self.head_size} ≠ {self.hidden_size}"
+            )
+            raise ValueError(msg)
         if self.num_key_value_heads <= 0:
             msg = "number of key-value heads must be positive"
+            raise ValueError(msg)
+        if self.num_key_value_heads > self.num_heads:
+            msg = (
+                f"more key-value heads ({self.num_key_value_heads}) than query "
+                f"heads ({self.num_heads}): no such attention kind"
+            )
             raise ValueError(msg)
 
     @property
@@ -272,7 +311,7 @@ class LayeredCache:
         """Support `cache[i] = LayerSlice(...)` — the in-place append/replace
         the decode loops of the engine adapters rely on."""
         if isinstance(index, slice):
-            replacement = list(slc) if isinstance(slc, LayeredCache) else list(slc)
+            replacement = list(slc)
             for n, s in enumerate(replacement):
                 if not isinstance(s, LayerSlice):
                     msg = f"index {n}: expected a LayerSlice, got {type(s).__name__}"
@@ -294,6 +333,9 @@ class LayeredCache:
         return bool(self.slices)
 
     def append(self, slc: LayerSlice) -> None:
+        if not isinstance(slc, LayerSlice):
+            msg = f"expected a LayerSlice, got {type(slc).__name__}"
+            raise TypeError(msg)
         self.slices.append(slc)
 
     @property
@@ -365,7 +407,7 @@ class FusionReport:
     def __str__(self):
         lines = [f"fusion report — {self.num_tokens} tokens, {len(self.gate_values)} gates"]
         for i, g in enumerate(self.gate_values):
-            state = "open" if g > 0.5 else "closed"
+            state = "open" if g > GATE_OPEN_THRESHOLD else "closed"
             lines.append(f"  layer {i:>2}: gate {g:0.4f}  [{state}]")
         for kind in ("key", "value"):
             er = self.effective_rank.get(kind)

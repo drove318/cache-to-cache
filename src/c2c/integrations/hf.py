@@ -8,7 +8,7 @@ cache installed through ``past_key_values=`` on ``generate``.
 Requires the ``transformers`` package (extra: ``c2c-cache[hf]``). Where
 the installed version predates the cache API, the adapter falls back to
 prefill-only capture and *documents the degradation* (spec §4.1) via
-``DEGRADED_REASON``, surfaced by ``c2c doctor`` — never silent.
+the instance's capability report, surfaced by ``c2c doctor`` — never silent.
 
 The cache layout follows the engine's own: each layer exposes ``.key``
 and ``.value`` of shape ``[batch, heads, seq, head_dim]``; this adapter
@@ -19,7 +19,7 @@ keeps the heads view for the dynamic weighting module (FR-06).
 from __future__ import annotations
 
 from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["HFAdapter", "available"]
 
@@ -36,7 +36,13 @@ class HFAdapter(EngineAdapter):
 
     engine_name = "HF Transformers"
     required_extra = "hf"
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = None
+    #: the build's condition: an old ``transformers`` without the cache API
+    DEGRADATION_IF = (
+        "this transformers version does not expose past_key_values: "
+        "prefill-only capture, fusion reduced to the receiver's own cache"
+    )
 
     def __init__(self, model_id: str, **options):
         super().__init__(model_id, **options)
@@ -52,7 +58,7 @@ class HFAdapter(EngineAdapter):
         self._model = None
         self._tokenizer = None
         self._degraded = False
-        self.DEGRADED_REASON: str | None = None
+        self._pending: tuple | None = None  # the cache, until the next generation
 
     # -- lazy loads: models are heavy; do it on first use ─────────────────
     def _ensure_model(self):
@@ -147,11 +153,6 @@ class HFAdapter(EngineAdapter):
         past = getattr(out, "past_key_values", None)
         if past is None:  # pre-cache API: degrade, document
             self._degraded = True
-            self.DEGRADED_REASON = (
-                "this transformers version does not expose "
-                "past_key_values: prefill-only capture, fusion reduced "
-                "to the receiver's own cache"
-            )
             return LayeredCache([])
         slices = []
         for layer in past:
@@ -262,11 +263,7 @@ class HFAdapter(EngineAdapter):
             out = model.generate(input_ids=ids, **kwargs)
         new = out[0][len(list(prompt_tokens)) :]
         text = self._ensure_tokenizer().decode(new.tolist(), skip_special_tokens=True)
-        if stop:
-            for s in stop:
-                if s and s in text:
-                    text = text[: text.find(s)]
-        return text
+        return truncated(text, stop)  # the house cut, shared with the other adapters
 
     # -- tokenizer protocol bits, we provide ────────────────────────────────
     def encode(self, text: str):
@@ -274,10 +271,3 @@ class HFAdapter(EngineAdapter):
 
     def decode_tokens(self, token_ids):
         return self._ensure_tokenizer().decode(list(token_ids), skip_special_tokens=True)
-
-    # -- capabilities, for c2c doctor ───────────────────────────────────────
-    def available_capabilities(self):
-        caps = super().available_capabilities()
-        if self._degraded and self.DEGRADED_REASON:
-            caps.append(f"degraded:{self.DEGRADED_REASON}")
-        return caps

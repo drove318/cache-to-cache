@@ -270,7 +270,12 @@ class MCPServer:
             self.log(f"tool {name} raised {exc.__class__.__name__}: {exc}")
             return {
                 "content": [
-                    {"type": "text", "text": f"tool {name} failed: {exc.__class__.__name__}"}
+                    {
+                        "type": "text",
+                        # the message, delivered to the client — the tools raise
+                        # remedies; the client applies them, so let the client see
+                        "text": f"tool {name} failed: {exc.__class__.__name__}: {exc}",
+                    }
                 ],
                 "isError": True,
             }
@@ -345,8 +350,21 @@ class MCPServer:
     def _tool_c2c_ask(self, args: dict) -> dict:
         model = _require(args, "model")
         prompt = _require(args, "prompt")
-        max_tokens = int(args.get("max_tokens") or 64)
-        temperature = float(args.get("temperature") or 0.0)
+        declared_tokens = args.get("max_tokens")
+        declared_temperature = args.get("temperature")
+        try:
+            max_tokens = 64 if declared_tokens is None else int(declared_tokens)
+            temperature = 0.0 if declared_temperature is None else float(declared_temperature)
+        except (TypeError, ValueError) as exc:
+            raise _BadParams(f"the numeric arguments do not parse: {exc}") from exc
+        if max_tokens < 1:
+            raise _BadParams(
+                f"max_tokens must be at least 1 (the schema's bound), got {max_tokens}"
+            )
+        if temperature < 0.0:
+            raise _BadParams(
+                f"temperature must not be below the schema's bound (0.0), got {temperature}"
+            )
         from .openai_proxy import ChatPipeline
 
         pipeline = ChatPipeline(hub=self.hub)
@@ -437,6 +455,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
     server_core: MCPServer | None = None  # bound by main()
     api_key: str | None = None
     verbose = False
+    timeout = 60  # a stalled body read will raise: 60s, then 408, then silence
 
     def log_message(self, fmt: str, *args) -> None:
         if self.verbose:
@@ -491,7 +510,39 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.UNAUTHORIZED,
             )
             return
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        from .openai_proxy import MAX_BODY_BYTES
+
+        declared = self.headers.get("Content-Length", "0") or "0"
+        try:
+            length = int(declared)
+        except ValueError:
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": INVALID_REQUEST,
+                        "message": f"Content-Length {declared!r} is not a number",
+                    },
+                },
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+        if length > MAX_BODY_BYTES:
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": INVALID_REQUEST,
+                        "message": (
+                            f"the body declares {length} bytes; the ceiling is {MAX_BODY_BYTES}"
+                        ),
+                    },
+                },
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
+            return
         raw = self.rfile.read(length) if length > 0 else b""
         try:
             message = json.loads(raw.decode("utf-8") or "{}")
@@ -501,7 +552,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     "jsonrpc": "2.0",
                     "id": None,
                     "error": {"code": PARSE_ERROR, "message": "parse error"},
-                }
+                },
+                HTTPStatus.BAD_REQUEST,  # the body, corrupt; the status, its neighbour's kin
             )
             return
         if not isinstance(message, dict):
@@ -513,7 +565,27 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 }
             )
             return
-        reply = self.server_core.respond(message) if self.server_core else None
+        core = self.server_core
+        if core is None:
+            # the distinction the transport must keep: a notification earns
+            # silence; an unbound core is a server's misfortune, and says so
+            if "id" not in message:
+                self.send_response(HTTPStatus.NO_CONTENT)  # in silence, as per the spec
+                self.end_headers()
+                return
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {
+                        "code": INTERNAL_ERROR,
+                        "message": "the server core is not bound (main binds it)",
+                    },
+                },
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+        reply = core.respond(message)
         if reply is None:  # the notification, acknowledged
             self.send_response(HTTPStatus.NO_CONTENT)  # in silence, as per the spec
             self.end_headers()
@@ -540,9 +612,9 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
     import os
 
     from ..utils.console import banner, error_hint
-    from .openai_proxy import is_loopback
+    from .openai_proxy import _preflight_tls, is_loopback
 
-    api_key = args.api_key or os.environ.get("C2C_API_KEY")
+    api_key = args.api_key if args.api_key is not None else os.environ.get("C2C_API_KEY")
     if not api_key and not is_loopback(args.host):
         print(
             error_hint(
@@ -553,23 +625,34 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
             file=sys.stderr,
         )
         return 2
+    from ..config import ServeConfig
+
+    cfg = ServeConfig(
+        host=args.host,
+        port=args.port,
+        certfile=args.certfile,
+        keyfile=args.keyfile,
+        api_key=api_key,
+    )
+    _preflight_tls(cfg, "c2c-mcp")  # speaks before the bind: half a TLS pair is a user error
+
     MCPRequestHandler.server_core = server
     MCPRequestHandler.api_key = api_key
     try:
-        httpd = MCPHTTPServer((args.host, args.port), MCPRequestHandler)
-        if args.certfile and args.keyfile:
+        httpd = MCPHTTPServer((cfg.host, cfg.port), MCPRequestHandler)
+        if cfg.certfile and cfg.keyfile:
             from .openai_proxy import _make_ssl_context
 
-            httpd.socket = _make_ssl_context(args.certfile, args.keyfile).wrap_socket(
+            httpd.socket = _make_ssl_context(cfg.certfile, cfg.keyfile).wrap_socket(
                 httpd.socket, server_side=True
             )
     except OSError as exc:
-        sys.stderr.write(f"c2c-mcp: cannot bind {args.host}:{args.port}: {exc}\n")
+        sys.stderr.write(f"c2c-mcp: cannot bind {cfg.host}:{cfg.port}: {exc}\n")
         return 1
     sys.stderr.write(banner("mcp", __version__) + "\n")
-    scheme = "https" if (args.certfile and args.keyfile) else "http"
+    scheme = "https" if (cfg.certfile and cfg.keyfile) else "http"
     sys.stderr.write(
-        f"  listening on {scheme}://{args.host}:{args.port} "
+        f"  listening on {scheme}://{cfg.host}:{cfg.port} "
         "(JSON-RPC over POST /); the tools of the trade\n"
     )
     sys.stderr.write(

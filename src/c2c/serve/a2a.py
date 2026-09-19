@@ -242,6 +242,7 @@ class A2AHandler(BaseHTTPRequestHandler):
 
     server_version = f"c2c-a2a/{__version__}"
     protocol_version = "HTTP/1.1"
+    timeout = 60  # a stalled body read will raise: 60s, then 408, then silence
 
     pipeline = None  # bound by the factory
     config: ServeConfig | None = None
@@ -267,11 +268,23 @@ class A2AHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             self.wfile.flush()
 
-    def _rpc_error(self, req_id, code: int, message: str) -> None:
-        self._json({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
+    def _rpc_error(self, req_id, code: int, message: str, status: int = HTTPStatus.OK) -> None:
+        self._json(
+            {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}, status
+        )
 
     def _read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        from .openai_proxy import MAX_BODY_BYTES
+
+        declared = self.headers.get("Content-Length", "0") or "0"
+        try:
+            length = int(declared)
+        except ValueError as exc:
+            msg = f"Content-Length {declared!r} is not a number"
+            raise ValueError(msg) from exc
+        if length > MAX_BODY_BYTES:
+            msg = f"the body declares {length} bytes; the ceiling is {MAX_BODY_BYTES}"
+            raise ValueError(msg)
         return self.rfile.read(length) if length > 0 else b""
 
     def _principal(self) -> str | None:
@@ -345,6 +358,9 @@ class A2AHandler(BaseHTTPRequestHandler):
             body = json.loads(self._read_body().decode("utf-8") or "{}")
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._rpc_error(None, -32700, "parse error: the body is not JSON")
+            return
+        except ValueError as exc:  # the body, too large; the header, lying
+            self._rpc_error(None, -32600, f"invalid request: {exc}", HTTPStatus.BAD_REQUEST)
             return
         if not isinstance(body, dict) or not isinstance(body.get("method"), str):
             req_id = body.get("id") if isinstance(body, dict) else None
@@ -579,6 +595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         serve_bridge(cfg, public_url=args.public_url)
     except OSError as exc:
         sys.stderr.write(f"c2c-a2a: cannot bind {cfg.host}:{cfg.port}: {exc}\n")
+        return 1
     return 0
 
 

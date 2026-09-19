@@ -7,7 +7,8 @@ switch, deliberately not a second binary (FR-09): one code base, many
 fusion behaviours.
 
 The same 3-layer MLP topology also drives the cache-transformation oracle
-of §3.2.2 / Fig. 3, which is why the paper's appendix reuses it; we keep
+of §3.2.2 (the text, which the extraction delivered; the figure it was set
+in, it was not), which is why the paper's appendix reuses it; we keep
 one implementation, two use sites.
 """
 
@@ -72,4 +73,4 @@ class PreProjection(nn.Module):
 
     def __repr__(self):
         head = f"{self.in_features} → {self.out_features}"
-        return f"PreProjection({head}, layers={len(self.mlp)})"
+        return f"PreProjection({head}, layers={(len(self.mlp) + 1) // 2})"

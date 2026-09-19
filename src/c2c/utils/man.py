@@ -10,10 +10,15 @@ pager (``make man``).
 
 Topics (sorted, as in the pager's index)::
 
+    a2a        the A2A agent-card bridge (HL-3)
     c2c        the command, overview, invocation, exit status
+    commands   the same page as c2c: the verb inventory
     config     the configuration tree and the two heads (FR-06)
+    engines    the eight whole engines and the adapters
     fuser      the cache fuser, the modules that learn
-    engines    the seven whole engines and the adapters
+    mcp        the MCP server, the tools of the trade (HL-2)
+    proxy      the OpenAI-compatible front on the wire (HL-1)
+    serve      the proxy as a command: options and exit status
     zoo        the zoo maintenance interface for trained fusers
 """
 

@@ -58,7 +58,10 @@ class TestTokenAlignment:
 
             def encode_alternatives(self, text):
                 """Every registered piece that can cover the string, longest first."""
-                alts = [[self.vocab[p]] for p in self.vocab if p.startswith(text)]
+                pieces = sorted(
+                    (p for p in self.vocab if p.startswith(text)), key=len, reverse=True
+                )
+                alts = [[self.vocab[p]] for p in pieces]
                 alts.append([0])  # the unknown, ever available
                 return alts
 

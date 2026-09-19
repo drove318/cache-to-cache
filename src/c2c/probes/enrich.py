@@ -24,17 +24,19 @@ improvement comes from the richer question embeddings induced by the
 exemplars, not from attending to additional token caches (as in
 ``few_shot``).
 
-Figure 4 (selective enrichment): :meth:`EnrichmentOracle.enrich_layers`
-enriches only a chosen set of layers, in ascending order of the layer's
-measured benefit; enriching the top-k best-performing layers yields
-slightly higher accuracy than enriching all, while enriching the worst
-ones declines accuracy — the observation that motivated the learnable
+Figure 4 (selective enrichment), as the paper's caption delivers it:
+*"Enriching more best-performing layers yields increased accuracy, while
+enriching the worst-performing ones declines accuracy."*
+:meth:`EnrichmentOracle.enrich_layers` enriches any chosen set of layers
+(the choice, and their order, are the caller's); the §3.2.1 finding of
+*"substantial variation across layers"* is what motivated the learnable
 gates of :class:`c2c.fuser.modules.Gate`.
 
 Example (doctest-friendly, using the miniature engines of the test
 suite)::
 
     >>> from c2c.integrations.reference import ReferenceEngine
+    >>> from c2c.probes import EnrichmentOracle
     >>> oracle = EnrichmentOracle(ReferenceEngine())
     >>> [r.method for r in oracle.run(exemplars=[0, 1], question=[2, 3])]
     ['direct', 'few-shot', 'oracle']
@@ -55,9 +57,9 @@ METHODS = ("direct", "few-shot", "oracle")
 
 @dataclass(frozen=True)
 class EnrichmentResult:
-    """One measurement of the enrichement oracle."""
+    """One measurement of the enrichment oracle."""
 
-    method: str  # one of METHOD
+    method: str  # one of METHODs
     cache_len: int  # |C| actually used while decoding
     enriched: bool  # were exemplars present during prefill?
     answer: str  # what the receiver said
@@ -185,22 +187,18 @@ class EnrichmentOracle:
         whole = self.provider.capture(list(exemplars) + list(question))
         base = self.provider.capture(list(question))
         start, stop = len(exemplars), len(exemplars) + len(question)
+        wanted = set(layers)
+        for n in wanted:
+            if not isinstance(n, int) or not 0 <= n < len(base):
+                msg = f"layer {n!r} out of range (the cache has {len(base)} layers)"
+                raise IndexError(msg)
         merged = []
-        seen: set[int] = set()
         for n, row in enumerate(base):
-            if n in layers:
-                if n >= len(whole):
-                    msg = f"layer {n} outside cache range (cache has {len(whole)} layers)"
-                    raise IndexError(msg)
+            if n in wanted:
                 src = whole[n]
                 merged.append(type(row)(src.key[start:stop], src.value[start:stop]))
-                seen.add(n)
             else:
                 merged.append(row)
-        missing = set(layers) - seen
-        if missing:
-            msg = f"unknown layers requested for enrichment: {sorted(missing)}"
-            raise ValueError(msg)
         cache = LayeredCache(merged)
         answer = self._decode_with(cache, question, max_new_tokens=max_new_tokens)
         return EnrichmentResult(

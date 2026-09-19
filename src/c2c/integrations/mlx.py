@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..types import LayeredCache, LayerGeometry, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["MLXAdapter", "available"]
 
@@ -31,6 +31,7 @@ class MLXAdapter(EngineAdapter):
 
     engine_name = "MLX"
     required_extra = "mlx"
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = (
         "the bindings expose no cache hook: prefill-only capture; "
         "fusion reduced to the receiver's own cache"
@@ -66,7 +67,14 @@ class MLXAdapter(EngineAdapter):
         return ModelSpec(
             id=self.model_id,
             geometry=LayerGeometry(
-                layers=layers, hidden_size=hidden, num_heads=heads, name=self.model_id
+                layers=layers,
+                hidden_size=hidden,
+                num_heads=heads,
+                name=(
+                    self.model_id
+                    if cfg is not None
+                    else f"{self.model_id} (geometry unknown — the model carries no config)"
+                ),
             ),
             family=str(getattr(cfg, "model_type", "mlx") if cfg else "mlx"),
             instruction_tuned=bool(self.options.get("instruction_tuned", True)),
@@ -99,7 +107,7 @@ class MLXAdapter(EngineAdapter):
             max_tokens=int(max_new_tokens),
             temp=float(temperature or 0.0),
         )
-        return "".join(stream)
+        return truncated("".join(stream), stop)  # the driver knows no stops; we do
 
     def _ensure_tokenizer(self) -> Any:
         self._ensure()  # the model carries the tokenizer
@@ -110,6 +118,3 @@ class MLXAdapter(EngineAdapter):
 
     def decode_tokens(self, token_ids):
         return self._ensure_tokenizer().decode(list(token_ids))
-
-    def available_capabilities(self):
-        return super().available_capabilities()

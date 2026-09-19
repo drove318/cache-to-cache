@@ -111,7 +111,7 @@ class UnifiedLatentSpace(nn.Module):
         if not self.mapping:
             msg = "empty layer mapping: nothing to fuse"
             raise ValueError(msg)
-        self.latent_dim = int(latent_dim or 2 * receiver.kv_hidden_size)
+        self.latent_dim = int(2 * receiver.kv_hidden_size if latent_dim is None else latent_dim)
         fc = fuser_config or FuserConfig()
         gc = gate_config or GateConfig()
 
@@ -203,8 +203,7 @@ class UnifiedLatentSpace(nn.Module):
         ``caches[i]`` belongs to ``self.sharers[i]``. For every mapped
         receiver layer ``n`` the latent of each sharer at its layer
         ``G(n)`` is gathered, averaged (equal weights — a deliberate
-        baseline; weighting per sharer is available via
-        ``token_mappings``-style call-time arguments in future releases),
+        baseline, as the paper publishes it),
         and injected through the layer's fusion module, scaled by the
         learnable gate g_n and applied residually — never a destructive
         overwrite (FR-03, shared provenance with the pairwise fuser).
@@ -262,5 +261,12 @@ class UnifiedLatentSpace(nn.Module):
             z_bar = z_sum / len(latents)  # the averaged latent
             delta_k, delta_v = self.fusers[n](r_k, r_v, z_bar)
             w = weights[n]
-            out.append(LayerSlice(r_k + w * delta_k, r_v + w * delta_v))
+            fused_k = r_k + w * delta_k  # Eq. (3), the residual add
+            fused_v = r_v + w * delta_v
+            kvh = self.receiver.kv_heads
+            if kvh > 1:  # the heads view back, the layout the engines install
+                hs = self.receiver.head_size
+                fused_k = fused_k.reshape(fused_k.shape[0], kvh, hs)
+                fused_v = fused_v.reshape(fused_v.shape[0], kvh, hs)
+            out.append(LayerSlice(fused_k, fused_v))
         return LayeredCache(out)

@@ -58,6 +58,25 @@ fusion layer by layer — which gate opened, how far its delta travelled.
 - **Style:** the code follows the style of the surrounding code — the
   house voice is the house. Ruff enforces it; `make lint` reports it.
 
+## The plugin, the SDK (one ABI, many adapters)
+
+An adapter is the pair of interfaces, `CacheProvider` (capture) and
+`CacheInjector` (install, generate). Ship a package that exposes the
+entry-point group `c2c.engines`, one entry per adapter::
+
+    [project.entry-points."c2c.engines"]
+    myengine = "my_engine.c2c:MyEngineAdapter"
+
+The class implements the two interfaces and a `spec()` returning the
+`ModelSpec` of the model it drives, plus two optional class members:
+`required_extra` (the pip extra that installs the engine, or `None` for
+an endpoint-only engine) and `DEGRADATION` (why the capture is
+prefill-only, where the engine exposes no cache hook — printed by
+`c2c doctor`, never silent). When the engine cannot be imported, raise
+`AdapterNotSupported(hint=...)`: the hub answers with the relay, and
+says so. The module `c2c.integrations.registry` is the implementation;
+`c2c.engines(7)` is the page.
+
 ## What the CI will check
 
 The matrix (`.github/workflows/ci.yaml`) builds, on `pull_request` and on

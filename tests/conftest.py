@@ -14,6 +14,11 @@ import sys
 import pytest
 import torch
 
+# the suite, sealed: the promise of the docstring, enforced — no test shall
+# probe the GPU, whatever the driver's mood. (a stray CUDA_ERROR_OUT_OF_MEMORY
+# from a sharing driver must not flake the determinism the miniature promises)
+os.environ.setdefault("C2C_DEVICE", "cpu")
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(REPO_ROOT, "tests", "fixtures")
 SRC = os.path.join(REPO_ROOT, "src")

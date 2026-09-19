@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 from ..types import LayeredCache, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["TGIAdapter", "available"]
 
@@ -32,6 +32,7 @@ class TGIAdapter(EngineAdapter):
 
     engine_name = "TGI"
     required_extra = None
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = (
         "TGI's wire protocol carries no cache: prefill-only capture; "
         "fusion reduced to the receiver's own cache"
@@ -62,7 +63,7 @@ class TGIAdapter(EngineAdapter):
         self._post("/info", {})  # liveness probe: unreachable raises AdapterNotSupported
         return ModelSpec(
             id=self.model_id,
-            geometry=self.options.get("geometry") or _unknown_geometry(),
+            geometry=self.options.get("geometry") or _unknown_geometry(self.model_id),
             family="tgi",
             instruction_tuned=bool(self.options.get("instruction_tuned", True)),
         )
@@ -89,7 +90,8 @@ class TGIAdapter(EngineAdapter):
         if stop:
             params["stop_sequences"] = list(stop)
         out = self._post("/generate", {"inputs": "", "parameters": params})
-        return str(out.get("generated_text", out.get("token", {}).get("text", "")))
+        text = str(out.get("generated_text", out.get("token", {}).get("text", "")))
+        return truncated(text, stop)  # the endpoint may not honour stop; we do
 
     def encode(self, text: str):
         out = self._post("/encode", {"text": text})
@@ -99,11 +101,9 @@ class TGIAdapter(EngineAdapter):
         out = self._post("/decode", {"token_ids": list(token_ids)})
         return str(out.get("decoded_token", out.get("tokens", "")))
 
-    def available_capabilities(self):
-        return super().available_capabilities()
 
-
-def _unknown_geometry():
+def _unknown_geometry(name: str | None = None):
     from ..types import LayerGeometry
 
-    return LayerGeometry(layers=1, hidden_size=1, num_heads=1)
+    label = f"{name or 'the model'} (geometry unknown — pass options.geometry)"
+    return LayerGeometry(layers=1, hidden_size=1, num_heads=1, name=label)

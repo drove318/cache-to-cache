@@ -29,8 +29,9 @@ DESCRIPTION
         Input-aware head modulation: statistics per attention head
         (mean and max over the token axis) are pooled, passed through a
         small modulation network, and the projected information is
-        reweighted per token/query, one weight per head. Beware the two
-        heads (see c2c.config(5), section HEADS).
+        reweighted per attention head — one weight per head, input-aware
+        across the pooled rows. Beware the two heads (see
+        c2c.config(5), section HEADS).
 
     Gate
         A learnable per-layer scalar, soft-sampled with the

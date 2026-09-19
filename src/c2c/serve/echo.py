@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..integrations.registry import truncated
 from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
 
 __all__ = ["EchoEngine", "ECHO_GEOMETRY", "available"]
@@ -60,6 +61,9 @@ class EchoEngine:
         "relay: mirrors prompts, fuses nothing — "
         "pip install 'c2c-cache[train]' for the reference engine"
     )
+    #: the truth of the relay, plainly told: it mirrors prompts, it does not
+    #: learn; pairs asking to fuse on it are refused at the gate of the hub
+    MIRRORS_ONLY = True
 
     def __init__(self, model_id: str, options: dict | None = None):
         self.model_id = str(model_id)
@@ -102,8 +106,8 @@ class EchoEngine:
         width = ECHO_GEOMETRY.kv_heads * ECHO_GEOMETRY.head_size
         ramp = np.arange(1, width + 1, dtype=np.float64)
         rows = (ids[:, None] * ramp[None, :] % 97.0) / 97.0
-        key = rows.tolist()
-        value = ((rows + 0.5) % 1.0).tolist()
+        key = rows  # arrays of numbers: the rows are the cache, the columns too
+        value = (rows + 0.5) % 1.0
         return LayeredCache([LayerSlice(key, value) for _ in range(ECHO_GEOMETRY.layers)])
 
     # -- CacheInjector ──────────────────────────────────────────────────────
@@ -121,7 +125,4 @@ class EchoEngine:
     ) -> str:
         words = [self._lex.get(int(t), f"<{int(t)}>") for t in list(prompt_tokens)]
         answer = " ".join(words[: max(int(max_new_tokens), 1)])
-        for cut in stop or ():
-            if cut and cut in answer:
-                answer = answer[: answer.find(cut)]
-        return answer.strip()
+        return truncated(answer, stop).strip()  # the house cut, shared; the strip, last

@@ -31,10 +31,30 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+from collections.abc import Sequence
 
 from ..types import ModelSpec
 
-__all__ = ["engines", "EngineAdapter", "AdapterNotSupported"]
+__all__ = ["engines", "EngineAdapter", "AdapterNotSupported", "truncated"]
+
+
+def truncated(text: str, stop: Sequence[str] | None) -> str:
+    """Cut *text* at the earliest of the *stop* sequences.
+
+    Adapters whose engines honour stop lists on their own endpoint pass
+    them through; every adapter cuts post-generation as well, belt and
+    braces, so that a harness which passes stop always stops.
+    """
+    if not stop:
+        return text
+    cut = len(text)
+    for seq in stop:
+        if seq:
+            at = text.find(seq)
+            if 0 <= at < cut:
+                cut = at
+    return text[:cut]
+
 
 ENTRY_POINT_GROUP = "c2c.engines"
 
@@ -81,10 +101,17 @@ class EngineAdapter:
     engine_name: str = "unknown"
     #: the extra that provides the engine, if the capability is missing
     required_extra: str | None = None
-    #: set when capture quality is reduced below the ABI's expectation;
-    #: printed by c2c doctor; never empty in a shipping adapter
+    #: the permanent truth of the engine: what it cannot do, whatever the
+    #: build; printed by c2c doctor; never empty in a shipping adapter
     DEGRADATION: str | None = None
+    #: the build's condition: what an instance cannot do because the installed
+    #: engine lacks a hook the adapter could use (adapters set ``_degraded``)
+    DEGRADATION_IF: str | None = None
 
+    #: what the engine's generate does with the ABI's tools argument:
+    #: 'native' when the engine acts on it, 'ignored' when the parameter is
+    #: accepted and dropped; None when the adapter does not say, not reported
+    TOOLS: str | None = None
     #: configuration — defaults for the adapter's own options
     default_options: dict = {}
 
@@ -92,6 +119,7 @@ class EngineAdapter:
         self.model_id = model_id
         self.options = {**self.default_options, **options}
         self._spec: ModelSpec | None = None
+        self._degraded = False  # the build's condition, set on discovering a missing hook
 
     # -- protocol: CacheProvider/CacheInjector delegation, all optional ────
     def spec(self) -> ModelSpec:
@@ -122,9 +150,23 @@ class EngineAdapter:
             "generate" if hasattr(self, "generate") else "generate:missing",
             "score" if hasattr(self, "score") else "score:missing",
         ]
-        if self.DEGRADATION:
-            caps.append(f"degraded:{self.DEGRADATION}")
+        why = self.DEGRADATION
+        if why is None and getattr(self, "_degraded", False):
+            why = self.DEGRADATION_IF
+        if self.TOOLS:
+            caps.append(f"tools:{self.TOOLS}")
+        if why:
+            caps.append(f"degraded:{why}")
         return caps
+
+    def is_degraded(self) -> bool:
+        """True when the installed build lacks a hook the adapter could use.
+
+        A permanent ``DEGRADATION`` is the nature of the engine, no fault of
+        this machine; ``DEGRADATION_IF`` under this predicate is the build's
+        condition, and the actionable kind — the doctor warns of it.
+        """
+        return bool(self.DEGRADATION_IF) and getattr(self, "_degraded", False)
 
     # subclasses must override the two hooks of the capture path, if present
     def close(self) -> None:
@@ -140,11 +182,13 @@ class EngineAdapter:
 
 
 class _EngineRegistry:
-    """The registry, a small selection of the available adapters.
+    """The registry of the adapters: register, unregister, lookup, load, and
+    the reporting of ``registered_names`` and ``describe``.
 
-    Membership tests, dictionary access (both by name and by module),
-    all the usual methods of dict (see the entry-points section of the
-    language documentation for details on the group name).
+    Discovery of the ``c2c.engines`` entry points is cached for the life of
+    the process; :meth:`refresh` forgets the cache. Precedence: the explicit
+    registrations (the built-ins, and any ``register`` — a forced one casts
+    aside a discovered entry point of the same name) win over the discovered.
     """
 
     group = ENTRY_POINT_GROUP
@@ -171,11 +215,21 @@ class _EngineRegistry:
             msg = f"engine {name!r} already registered; pass force=True"
             raise ValueError(msg)
         self._registry[name] = target
+        if force and self._discovered is not None:
+            self._discovered.pop(name, None)  # the deliberate shadow wins
 
     def unregister(self, name: str) -> None:
         """Remove an adapter from the bus: an unknown name, a key error."""
         if self._registry.pop(name, None) is None and name not in self._entry_points():
             raise KeyError(f"engine {name!r} is not registered")
+
+    def refresh(self) -> None:
+        """Forget the discovered entry points; the next lookup sees the world anew.
+
+        Installing or removing a distribution while the process runs is
+        invisible to the cache until this is called.
+        """
+        self._discovered = None
 
     # -- discovery (entry points; see the packaging section) ───────────────
     def _entry_points(self) -> dict[str, str]:
@@ -222,11 +276,15 @@ class _EngineRegistry:
         try:
             module = _import_module(module_name)
         except ModuleNotFoundError as exc:
-            hint = None
             if name != "reference":
                 hint = (
                     f"the '{name}' adapter needs its engine installed "
                     f"(pip install the matching extra) — or use --engine reference"
+                )
+            else:
+                hint = (
+                    "the reference adapter is the house nets; it needs the "
+                    "train extra — pip install 'c2c-cache[train]'"
                 )
             raise AdapterNotSupported(f"engine {name!r} unavailable: {exc}", hint=hint) from exc
         try:
@@ -246,7 +304,14 @@ class _EngineRegistry:
             try:
                 module = _import_module(target.partition(":")[0])
                 cls = getattr(module, target.partition(":")[2])
-                mark = "degraded" if getattr(cls, "DEGRADATION", None) else "full"
+                why = getattr(cls, "DEGRADATION", None)
+                mark = (
+                    "degraded"
+                    if why
+                    else "conditional"
+                    if getattr(cls, "DEGRADATION_IF", None)
+                    else "full"
+                )
                 lines.append(f"  {name:<12} {target:<52} [{mark}]")
             except Exception as exc:  # reports must not raise
                 lines.append(f"  {name:<12} {target:<52} [unloaded: {exc.__class__.__name__}]")

@@ -19,8 +19,9 @@ Resolution rules (published, and mirrored in the manual pages
   plain relay: no fusion, just the model's own cache.
 
 Engines are built lazily on first request through the adapter registry
-(``c2c.integrations.engines``); with no engine installed the reference
-engine answers, so ``c2c-serve`` is usable out of the box.
+(``c2c.integrations.registry``, the member ``engines``); with no engine
+installed the reference engine answers, so ``c2c-serve`` is usable out of
+the box.
 """
 
 from __future__ import annotations
@@ -115,7 +116,15 @@ class ModelHub:
     def register_pair(
         self, *, receiver: str, sharer: str, fuser=None, aligner=None, note: str = ""
     ) -> Pair:
-        """Register a (Receiver, Sharer) collaboration under its canonical id."""
+        """Register a (Receiver, Sharer) collaboration under its canonical id.
+
+        Raises ValueError when a fuser is attached to a mirror-only engine:
+        the relay mirrors prompts, it does not learn, and a pair asking to
+        fuse on it is a misconfiguration turned away at the gate, with the
+        way to mend it named — not a server error met at the first request.
+        """
+        if fuser is not None:
+            self._refuse_mirrored_fusion()
         self.curated = True  # the operator has spoken: nothing auto
         pair = Pair(
             receiver=self._canonical(receiver),
@@ -137,6 +146,26 @@ class ModelHub:
                         "note": "side of a pair",
                     }
         return pair
+
+    def _refuse_mirrored_fusion(self) -> None:
+        """Consult the engine's nature; a mirror cannot fuse. Refuse, and say how."""
+        from ..integrations import registry as _registry
+
+        mirror = False
+        try:
+            target = _registry.engines.lookup(self.engine_name)
+            module = _registry._import_module(target.partition(":")[0])
+            cls = getattr(module, target.partition(":")[2], None)
+            mirror = bool(getattr(cls, "MIRRORS_ONLY", False))
+        except Exception:  # the probe must not block registration; the first build tells
+            mirror = False
+        if mirror:
+            msg = (
+                f"the {self.engine_name!r} engine mirrors prompts; it does not learn: "
+                "a pair with weights needs a cache-aware engine — install the train "
+                "extra (pip install 'c2c-cache[train]') and use --engine reference"
+            )
+            raise ValueError(msg)
 
     def unregister(self, model_id: str) -> bool:
         """Remove a model or a pair; True if something was removed."""
@@ -305,12 +334,15 @@ class ModelHub:
         obj = self._build(model_id, {})
         if obj is None:
             return None
+        why = getattr(obj, "DEGRADATION", None)
+        if why is None and getattr(obj, "_degraded", False):
+            why = getattr(obj, "DEGRADATION_IF", None)
         entry = {
             "id": model_id,
             "provider": obj,
             "injector": obj,
             "options": {},
-            "note": str(getattr(obj, "DEGRADATION", None) or f"auto-built via {self.engine_name}"),
+            "note": str(why or f"auto-built via {self.engine_name}"),
         }
         with self._lock:
             self._models.setdefault(model_id, entry)

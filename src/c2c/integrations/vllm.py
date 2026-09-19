@@ -5,7 +5,7 @@ manages its paged KV blocks; the connector interface lets an external
 party bind cache blocks to buffers it may access. Where the installed
 vLLM version does not ship the connector, this adapter falls back to
 prefill-only capture (generation still works; fusion degrades to the
-receiver's own cache) and says so — documented in ``DEGRADATION``.
+receiver's own cache) and says so — documented in ``DEGRADATION_IF``.
 
 Requires the ``vllm`` package. Import of the package is deferred to
 construction, so ``import c2c`` never pulls vLLM in.
@@ -14,7 +14,7 @@ construction, so ``import c2c`` never pulls vLLM in.
 from __future__ import annotations
 
 from ..types import AttentionKind, LayeredCache, LayerGeometry, LayerSlice, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["vLLMAdapter", "available"]
 
@@ -37,7 +37,8 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
 
     engine_name = "vLLM"
     required_extra = "vllm"
-    DEGRADATION = (
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
+    DEGRADATION_IF = (
         "no connector API in this build: prefill-only capture, "
         "KV-block access unavailable; fusion quality limited to "
         "the receiver's own cache"
@@ -99,6 +100,8 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
             if kv_heads == 1
             else AttentionKind.GQA
         )
+        arch = str(getattr(cfg, "model_type", "") or getattr(cfg, "architectures", ["unknown"])[0])
+        family = arch.split("For", 1)[0].lower() or "unknown"
         return ModelSpec(
             id=self.model_id,
             geometry=LayerGeometry(
@@ -109,7 +112,7 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
                 attention=kind,
                 name=self.model_id,
             ),
-            family=str(getattr(cfg, "architectures", ["unknown"])[0]),
+            family=family,
             instruction_tuned=bool(self.options.get("instruction_tuned", True)),
         )
 
@@ -157,7 +160,7 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
             prompt_token_ids["cache"] = layers  # the fused rows, delivered for this prompt
         outs = engine.generate(prompts=[prompt_token_ids], sampling_params=params)
         text = outs[0].outputs[0].text if outs and outs[0].outputs else ""
-        return text
+        return truncated(text, stop)  # the engine cuts on its own; we cut as well
 
     def encode(self, text: str):
         engine = self._ensure_engine()
@@ -166,10 +169,3 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
     def decode_tokens(self, token_ids):
         engine = self._ensure_engine()
         return engine.tokenizer.decode(list(token_ids))
-
-    # -- capabilities ───────────────────────────────────────────────────────
-    def available_capabilities(self):
-        caps = super().available_capabilities()
-        if self._degraded and self._connector is None:
-            caps.append(f"degraded:{self.DEGRADATION}")
-        return caps

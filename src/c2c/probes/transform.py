@@ -2,10 +2,10 @@
 
 Experiment, as published: train a three-layer MLP to map the KV-Cache of
 a source LLM (Qwen3-4B) into the representation space of a target LLM
-(Qwen3-0.6B). The t-SNE visualisation reveals that the raw caches of the
-two models are far apart, while the *transformed* cache falls within the
-target's representation space — the observation that licenses the
-concatenation of the two caches in the fuser's projection module.
+(Qwen3-0.6B). The t-SNE visualisation, as the paper's caption delivers it:
+*after transformation, the source cache falls within the target's
+representation space* — the observation that licenses the concatenation of
+the two caches in the fuser's projection module.
 
 The oracle here is a reusable instrument, not a one-off:
 :meth:`TransformationOracle.fit` trains the projector on any pair of
@@ -44,8 +44,8 @@ class TransformationResult:
 
     mae: float  # mean absolute error to the target rows
     purity: float  # share of rows whose nearest neighbour is intended
-    distance_before: float  # mean pairwise distance, under the untrained projector
-    distance_after: float  # mean pairwise distance, transformed against the target
+    distance_before: float  # mean absolute distance to the target rows, untrained
+    distance_after: float  # the same measure, after the fit
     steps: int = 0
     loss_curve: tuple = field(default_factory=tuple, compare=False)
 
@@ -71,14 +71,16 @@ class TransformationOracle:
     """The cache-transformation oracle of §3.2.2 / Fig. 3.
 
     The projector is a three-layer MLP (:class:`c2c.fuser.complex.PreProjection`)
-    trained to minimise the distance between the transformed source cache
-    and the target cache, in the spirit of the appendix's setup (A.3.2).
+    trained to minimise the distance between the transformed source key
+    caches and the target key caches, in the spirit of the appendix's
+    setup (A.3.2). The value half is mapped by the same matrix, for
+    convenience; the paper's figure plots the whole cache, the instrument
+    fits the keys.
     """
 
     def __init__(
         self,
         *,
-        latent_width: int | None = None,
         layers: int = 3,
         lr: float = 1e-3,
         epochs: int = 300,
@@ -87,7 +89,6 @@ class TransformationOracle:
         self.lr = float(lr)
         self.epochs = int(epochs)
         self.seed = int(seed)
-        self.latent_width = latent_width
         self.layers = int(layers)
         self.projector: nn.Module | None = None
 
@@ -101,7 +102,7 @@ class TransformationOracle:
         self.projector = PreProjection(int(x.shape[1]), int(y.shape[1]), layers=self.layers)
         optim = torch.optim.AdamW(self.projector.parameters(), lr=self.lr, weight_decay=0.0)
         curve: list[float] = []
-        for _ in range(epochs or self.epochs):
+        for _ in range(self.epochs if epochs is None else epochs):
             optim.zero_grad()
             loss = nn.functional.mse_loss(self.projector(x), y)
             loss.backward()
@@ -156,22 +157,26 @@ class TransformationOracle:
     ) -> str:
         """Write a two-dimensional projection of the caches as CSV.
 
-        Columns: ``x, y, kind`` where kind ∈ {source, target, transformed}.
-        ``method="pca"`` is exact and deterministic (svd); ``method="tsne"``
-        uses the optional scikit-learn peer when present, and raises —
-        never silently falls back — when it is not installed.
+        Columns: ``x, y, kind`` where kind ∈ {source, target, transformed};
+        without a fitted projector only the two raw clouds are written —
+        the before-picture of Fig. 3 needs no training. ``method="pca"``
+        is exact and deterministic (svd); ``method="tsne"`` uses the
+        optional scikit-learn peer when present, and raises — never
+        silently falls back — when it is not installed.
         """
         x, y = self._aligned_pair(source, target)
         with torch.no_grad():
-            t = self.projector(x) if self.projector is not None else x
-        data = torch.cat((x, y, t), dim=0).detach().to(torch.float64)
+            fitted = self.projector is not None
+            t = self.projector(x) if self.projector is not None else x  # narrowed direct
+        frames = (x, y, t) if fitted else (x, y)
+        data = torch.cat(frames, dim=0).detach().to(torch.float64)
         if method == "tsne":
             coords = self._tsne(data)
         else:
             coords = self._pca(data)
-        labels = (
-            (["source"] * x.shape[0]) + (["target"] * y.shape[0]) + (["transformed"] * t.shape[0])
-        )
+        labels = ["source"] * x.shape[0] + ["target"] * y.shape[0]
+        if fitted:
+            labels += ["transformed"] * t.shape[0]
         with open(path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             writer.writerow(("x", "y", "kind"))
@@ -182,7 +187,9 @@ class TransformationOracle:
     # -- internals ------------------------------------------------------------
     @staticmethod
     def _aligned_pair(source: LayeredCache, target: LayeredCache):
-        """Concatenate and stack the rows of both caches into two matrices."""
+        """Stack the KEY rows of both caches into two matrices; the value
+        rows are mapped by the same matrix in :meth:`transform`, for
+        convenience."""
 
         def stack_rows(cache):
             rows = [slc.key.reshape(slc.key.shape[0], -1) for slc in cache]

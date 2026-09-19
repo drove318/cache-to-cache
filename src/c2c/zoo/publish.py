@@ -59,8 +59,8 @@ def pair_id(sharer: str | ModelSpec, receiver: str | ModelSpec) -> str:
 
     Letters, digits, dots, dashes and underscores survive; everything else
     (arrows, slashes, spaces from model names such as ``Qwen2.5-0.5B``) is
-    folded to a single dash — case is preserved for legibility, ids are
-    compared case-sensibly.
+    folded to a single dash — case is folded to lower, for filesystem
+    sanity, so that ids compare the same on every machine.
     """
 
     def norm(item):
@@ -198,13 +198,13 @@ class ZooClient:
             "config": _plain(config),
             "sha256": _sha256(weights_path),  # the seal, on the shelf
         }
-        with open(os.path.join(directory, MANIFEST_NAME), "w", encoding="utf-8") as fh:
-            json.dump(manifest, fh, indent=2, sort_keys=True)
         if self.hub:
             try:
                 self._upload(directory, pid)
             except (urllib.error.URLError, OSError) as exc:
                 manifest["upload"] = f"skipped: {exc}"  # offline-first: local stands
+        with open(os.path.join(directory, MANIFEST_NAME), "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, sort_keys=True)  # the note rides the record
         return manifest
 
     # -- fetching ───────────────────────────────────────────────────────────
@@ -261,16 +261,18 @@ class ZooClient:
         receiver: str | ModelSpec,
         fuser_builder,
         strict: bool = True,
+        revision: str = "main",
     ):
         """Fetch a pair's weights and re-instantiate a fuser from them.
 
         ``fuser_builder`` is a zero-argument callable returning a
         :class:`torch.nn.Module` with the matching architecture (typically
-        a lambda around :class:`c2c.fuser.Fuser`).
+        a lambda around :class:`c2c.fuser.Fuser`). ``revision`` names the
+        hub revision to ask for; the local cache answers first, as ever.
         """
         import torch
 
-        directory = self.fetch(sharer=sharer, receiver=receiver)
+        directory = self.fetch(sharer=sharer, receiver=receiver, revision=revision)
         blob = torch.load(
             os.path.join(directory, WEIGHTS_NAME), map_location="cpu", weights_only=True
         )

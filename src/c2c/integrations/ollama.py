@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 
 from ..types import LayeredCache, LayerGeometry, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["OllamaAdapter", "available"]
 
@@ -41,6 +41,7 @@ class OllamaAdapter(EngineAdapter):
 
     engine_name = "Ollama"
     required_extra = None
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = (
         "Ollama's wire protocol carries no cache: prefill-only capture; "
         "put the model behind c2c-serve for the full experience"
@@ -68,8 +69,12 @@ class OllamaAdapter(EngineAdapter):
         return ids
 
     def decode_tokens(self, token_ids) -> str:
-        """Map each id back to its piece and join them, without separators."""
-        return "".join(self._id_to_piece.get(int(t), "") for t in token_ids)
+        """Map each id back to its piece and join them, without separators.
+
+        A foreign id — one this adapter never encoded — prints as its
+        visible sentinel ``<id>``, the house example: never swallow it.
+        """
+        return "".join(self._id_to_piece.get(int(t), f"<{int(t)}>") for t in token_ids)
 
     # -- HTTP plumbing ──────────────────────────────────────────────────────
     def _post(self, path: str, payload: dict) -> dict:
@@ -101,11 +106,21 @@ class OllamaAdapter(EngineAdapter):
             arch = str(info["model_info"]["general"]["architecture"]) or "ollama"
         except (KeyError, TypeError):
             pass
+        geo = self.options.get("geometry")
+        if isinstance(geo, dict):
+            geo = LayerGeometry(**geo)  # the option, consulted: the advice is actionable
+        if geo is None:
+            geo = LayerGeometry(
+                layers=1,
+                hidden_size=1,
+                num_heads=1,
+                name=f"{self.model_id} (geometry unknown — pass options.geometry)",
+            )
         return ModelSpec(
             id=self.model_id,
-            geometry=LayerGeometry(layers=1, hidden_size=1, num_heads=1, name=self.model_id),
+            geometry=geo,
             family=arch,
-            instruction_tuned=True,
+            instruction_tuned=bool(self.options.get("instruction_tuned", True)),
         )
 
     def capture(self, prompt_tokens):
@@ -138,7 +153,5 @@ class OllamaAdapter(EngineAdapter):
             },
         }
         out = self._post("/api/generate", payload)
-        return str(out.get("response", ""))
-
-    def available_capabilities(self):
-        return super().available_capabilities()
+        response = str(out.get("response", ""))
+        return truncated(response, stop)  # the endpoint may not honour stop; we do

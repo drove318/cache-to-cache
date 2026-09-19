@@ -27,6 +27,7 @@ class TensorRTLLMAdapter(EngineAdapter):
 
     engine_name = "TensorRT-LLM"
     required_extra = "trtllm"
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = (
         "the runtime exposes no cache hook to Python: prefill-only "
         "capture; fusion reduced to the receiver's own cache"

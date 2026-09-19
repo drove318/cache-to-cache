@@ -74,7 +74,7 @@ class FuserPair(nn.Module):
     """One fuser clone, mapped to one (receiver layer n, sharer layer G(n)) pair.
 
     Pipeline (Fig. 5): concat → [pre-projection (C2C-C only)] → projection
-    → dynamic weighting → feature-fusion residual add, scaled by the pair
+    → dynamic weighting → the residual add of Eq. (3), scaled by the pair
     gate g_n. Both the key and the value half of the joint vector pass
     through the same pair module, in parallel, sharing the gate value.
     """
@@ -194,6 +194,16 @@ class Fuser(nn.Module):
         produced by :class:`c2c.align.TokenAligner` (FR-10). ``None`` means
         both models agree on the tokenisation (identity alignment).
         """
+        # one auto-detected placement: the fuser follows its caches. engines
+        # may load their models on any device; move the trainable part to the
+        # device of the incoming rows, once, at the first forward. The
+        # receiver's device wins; a cross-device pair speaks for itself
+        # through torch's own informative message, in FuserPair.
+        if len(receiver_cache):
+            dev = getattr(receiver_cache[0].key, "device", None)
+            own = next(iter(self.parameters()), None)
+            if dev is not None and own is not None and own.device != dev:
+                self.to(dev)
         if len(receiver_cache) < len(self.mapping):
             msg = (
                 f"receiver cache has {len(receiver_cache)} layers, "

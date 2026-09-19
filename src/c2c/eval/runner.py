@@ -67,7 +67,7 @@ def run(
         msg = f"unknown benchmark {bench_name!r}; known: {', '.join(sorted(BENCHMARKS))}"
         raise KeyError(msg)
     score = scorer(bench)
-    cap = max_new_tokens or bench.max_out
+    cap = bench.max_out if max_new_tokens is None else int(max_new_tokens)
     result = EvalResult(mode=mode, benchmark=bench.name)
     for item in load_benchmark(bench.name, fixtures_dir=fixtures_dir, limit=limit):
         item.setdefault("prompt", bench.prompt_for(item))

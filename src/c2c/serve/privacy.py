@@ -5,12 +5,20 @@ Two knobs of the module — the console carries the master switch
 
 ``no_text_egress`` — :class:`NoTextFilter`
     egress filter: raw strings never leave the box. Anything that would
-    travel as plain text is replaced by a non-reversible digest of its
-    content (SHA-256, truncated), so cache segments can be transmitted
-    and reconciled without exposing the document.
+    travel as plain text is replaced by a digest of its content (SHA-256,
+    truncated to 64 bits — one-way where the payload has entropy: a
+    low-entropy value (a yes, a no, a PIN, a word in the dictionary) is
+    recoverable by exhaustive search of its domain), so cache segments can
+    be transmitted and reconciled without exposing the document.
 
 ``aes_gcm`` — :class:`WireCrypto`
-    the cache segments travel encrypted and authenticated, on the wire.
+    the frames that seal a cache segment for its journey: encrypted and
+    authenticated, for the wire. In the present build the *filter* is wired
+    to the front's access log (``--privacy`` digests prompt and answer
+    there), and the *seal* is offered with the distribution, awaiting its
+    relay: the proxy's caches live in one box, on the bus — the fusion is
+    refused under ``--privacy`` for want of a sealed remote leg, not for
+    want of the cipher. See the notes, and the manual.
     Uses AES-GCM through the optional ``cryptography`` peer (extra:
     ``c2c-cache[crypto]``). There is no silent fallback to a weaker
     cipher: if the peer is absent and sealing is requested, the call
@@ -33,31 +41,30 @@ _NONCE_BYTES = 12  # 96-bit nonces, as AES-GCM likes
 _TAG_BYTES = 16
 
 
-def _match_by_codes(module, codes, *, container):
-    """Resolve a member of *module* by its character codes.
+def _resolve_peer_member(container, name: str, *, where: str):
+    """Pick a member out of the live peer, by its own name.
 
-    A name is a name is a name — but a wrong name is a bug. The
-    algorithm (A E S) and the mode (G C M) are picked out of the live
-    peer by comparing code points, never by trusting a transcription.
+    The names of the cipher are the names, plain: ``AES`` is ``AES``,
+    ``GCM`` is ``GCM``. A clear message when the peer is too old to know
+    them: the peer must be upgraded, not the letters.
     """
-    for name in dir(module):
-        if name.startswith("_"):
-            continue
-        if [ord(ch) for ch in name] == list(codes):
-            return getattr(module, name)
-    wanted = bytes(codes).decode("ascii")
-    msg = (
-        f"the cryptography peer exposes no {container} member {wanted!r}; "
-        f"peer too old? upgrade cryptography"
-    )
-    raise ModuleNotFoundError(msg)
+    member = getattr(container, name, None)
+    if member is None:
+        msg = (
+            f"the cryptography peer exposes no {where} member {name!r}; "
+            f"peer too old? upgrade cryptography"
+        )
+        raise ModuleNotFoundError(msg)
+    return member
 
 
 class WireCrypto:
     """Seal and open cache segments with AES-GCM.
 
     A sealed frame on the wire is ``nonce ‖ ciphertext ‖ tag`` — the
-    layout the AEAD convention of the algorithm prescribes.
+    layout the AEAD convention of the algorithm prescribes. Under one key,
+    seal no more than 2**32 frames (the bound of the mode, NIST SP 800-38D
+    as published); re-key before the counter of the nonce runs out.
     """
 
     def __init__(self, key: bytes):
@@ -72,8 +79,8 @@ class WireCrypto:
                 "AES-GCM on the wire needs the cryptography peer (pip install 'c2c-cache[crypto]')"
             ) from exc
         self._Cipher = Cipher
-        self._AES = _match_by_codes(algorithms, (0x41, 0x45, 0x53), container="algorithms")
-        self._GCM = _match_by_codes(modes, (0x47, 0x43, 0x4D), container="modes")
+        self._AES = _resolve_peer_member(algorithms, "AES", where="algorithms")
+        self._GCM = _resolve_peer_member(modes, "GCM", where="modes")
         self._key = bytes(key)
 
     @staticmethod
@@ -104,7 +111,9 @@ class WireCrypto:
         if not isinstance(frame, (bytes, bytearray)):
             msg = f"can only open bytes, not {type(frame).__name__}"
             raise TypeError(msg)
-        if len(frame) < _NONCE_BYTES + _TAG_BYTES + 1:
+        # GCM permits an empty ciphertext: the frame of a body of nothing
+        # is nonce ‖ tag — 28 bytes, whole and entire, legitimate.
+        if len(frame) < _NONCE_BYTES + _TAG_BYTES:
             msg = "frame too short to be a sealed envelope"
             raise ValueError(msg)
         nonce = bytes(frame[:_NONCE_BYTES])
@@ -130,8 +139,10 @@ class NoTextFilter:
 
     The filter walks any JSON-ready structure (dicts, lists, tuples,
     scalars) and replaces every string it considers a text payload with
-    a tag of the form ``sha256:<first-16-hex>``. A whitelist of keys may
-    be supplied for fields that are protocol metadata (identifiers,
+    a tag of the form ``sha256:<first-16-hex>``. Numbers and bools pass
+    through; so do bytes (they are not JSON-ready — base64 them into
+    strings before the walk, if they must egress). A whitelist of keys
+    may be supplied for fields that are protocol metadata (identifiers,
     modes, urls) and are kept verbatim.
     """
 
@@ -164,11 +175,25 @@ class NoTextFilter:
 
 @dataclass(frozen=True)
 class PrivacyGuard:
-    """The privacy posture of one deployment; both knobs default to off."""
+    """The privacy posture of one deployment. The master switch
+    (``enabled``) defaults to off; the two knobs (``aes_gcm``,
+    ``no_text_egress``) default to on — a woken guard seals and scrubs
+    unless told otherwise.
+
+    When sealing is on, the guard carries the key: generated once, at
+    construction, and readable on :attr:`key` — the peer opens frames
+    with ``WireCrypto(guard.key).open(frame)``. Pass a key of your own
+    to share it out of band.
+    """
 
     enabled: bool = False
     aes_gcm: bool = True
     no_text_egress: bool = True
+    key: bytes | None = None
+
+    def __post_init__(self):
+        if self.enabled and self.aes_gcm and self.key is None:
+            object.__setattr__(self, "key", WireCrypto.generate_key())
 
     def guard(self) -> bool:
         """Report whether privacy is on, before anything else happens."""
@@ -177,8 +202,11 @@ class PrivacyGuard:
     def seal(self, payload: bytes, key: bytes | None = None) -> bytes:
         if not self.enabled or not self.aes_gcm:
             return payload
-        wire = WireCrypto(key if key is not None else WireCrypto.generate_key())
-        return wire.seal(payload)
+        chosen = key if key is not None else self.key
+        if chosen is None:  # belt and braces: an enabled guard always has one
+            chosen = WireCrypto.generate_key()
+            object.__setattr__(self, "key", chosen)
+        return WireCrypto(chosen).seal(payload)
 
     def scrub(self, obj, *, keep_keys: set[str] | None = None):
         if not self.enabled or not self.no_text_egress:

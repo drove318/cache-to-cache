@@ -78,9 +78,12 @@ class TestBlendPolicy:
     def test_percent_is_tolerated(self):
         assert BlendConfig(fraction=75).fraction == pytest.approx(0.75)
 
-    def test_out_of_range_is_clamped(self):
-        assert BlendConfig(fraction=130).fraction == pytest.approx(1.0)
-        assert BlendConfig(fraction=-1).fraction == pytest.approx(0.0)
+    def test_out_of_range_raises_loudly(self):
+        """Configuration errors, loudly reported — not silently clamped."""
+        with pytest.raises(ValueError, match="out of range"):
+            BlendConfig(fraction=130)
+        with pytest.raises(ValueError, match="out of range"):
+            BlendConfig(fraction=-1)
 
     def test_illegal_direction_raises(self):
         with pytest.raises(ValueError, match="former.*latter"):
@@ -194,15 +197,10 @@ class TestManPages:
         assert "run-agent" in text  # only to deny it exists
 
     def test_man_page_lists_the_environment(self):
-        for var in (
-            "C2C_SEED",
-            "C2C_GATE_TAU_MAX",
-            "C2C_GATE_TAU_MIN",
-            "C2C_BLEND_FRACTION",
-            "C2C_ALIGN_LAYERS",
-            "C2C_LR",
-            "C2C_PORT",
-        ):
+        """Every registered C2C_* variable of the map, listed in the man."""
+        from c2c.config import _ENV_MAP
+
+        for var in _ENV_MAP:
             assert var in MAN_C2C_CONFIG, f"{var} missing from the man page"
 
     def test_man_page_describes_the_synopsis(self):

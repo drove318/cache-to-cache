@@ -238,9 +238,11 @@ class TokenAligner:
                     return AlignedToken(rid, text, (sid,), "direct")
             if self._unk is not None:  # … else the unk token stands in
                 return AlignedToken(rid, text, (self._unk,), "unknown")
-            return AlignedToken(rid, text, (rid,), "direct")
+            # no unk in the sharer's vocabulary: encode the piece, the last
+            # resort — never pass a raw receiver id into a sharer vocabulary
+            return AlignedToken(rid, text, tuple(self._enc_s(text))[:1] or (0,), "unknown")
         # (1) general tokens: the one-to-many case
-        if text == "":  # empty pieces are kept as-is
+        if text == "":  # an empty piece stands for the space that joins words
             return AlignedToken(rid, text, tuple(self._enc_s(" ")), "first-occurrence")
         candidates = self._candidates(text)
         if not candidates:
@@ -310,7 +312,7 @@ class TokenAligner:
         *Template sections* (control tokens such as ``<|im_start|>``) are
         aligned by **length padding**: the section is extended with
         repetitions of the pad token so both sides see shells of equal
-        length; *message sections* (the user/assistant content) are
+        piece count; *message sections* (the user/assistant content) are
         aligned **semantically**, token by token, through :meth:`align`.
 
         Returns a list of ``{"role": …, "aligned": TokenAlignment}`` with
@@ -349,6 +351,7 @@ class TokenAligner:
                 "first-occurrence" if self.strategy == "maximal-coverage" else "maximal-coverage"
             ),
             pad_token=self.pad_token,
+            max_candidates=self.max_candidates,
         )
         b = other.align(receiver_ids)
         if not a:

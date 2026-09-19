@@ -77,7 +77,14 @@ def check_backends() -> list[Check]:
 
         checks.append(Check("numpy", STATUS_OK, numpy.__version__))
     except ModuleNotFoundError as exc:
-        checks.append(Check("numpy", STATUS_FAIL, str(exc), hint="pip install 'c2c-cache[train]'"))
+        checks.append(
+            Check(
+                "numpy",
+                STATUS_FAIL,
+                str(exc),
+                hint="pip install numpy — the core wire always needs it",
+            )
+        )
     try:
         import torch
 
@@ -125,8 +132,27 @@ def check_engines() -> list[Check]:
             continue  # aliases, reported once
         seen.add(target)
         try:
-            engines.load(name, model_id=f"probe-{name}")
-            checks.append(Check(f"engine:{name}", STATUS_OK, "registered"))
+            adapter = engines.load(name, model_id=f"probe-{name}")
+            caps = getattr(adapter, "available_capabilities", None)
+            report = caps() if callable(caps) else []
+            degraded = [c for c in report if c.startswith("degraded:")]
+            probe = getattr(adapter, "is_degraded", None)
+            build_condition = bool(probe()) if callable(probe) else False
+            if build_condition:
+                checks.append(
+                    Check(
+                        f"engine:{name}",
+                        STATUS_WARN,
+                        "; ".join(degraded) or "degraded",
+                        hint=f"upgrade the '{name}' engine, or use --engine reference",
+                    )
+                )
+            elif degraded:
+                checks.append(
+                    Check(f"engine:{name}", STATUS_OK, "registered; " + "; ".join(degraded))
+                )
+            else:
+                checks.append(Check(f"engine:{name}", STATUS_OK, "registered"))
         except (ModuleNotFoundError, ImportError, ValueError, RuntimeError) as exc:
             # AdapterNotSupported is a RuntimeError; the doctor reports, never crashes
             if target.endswith(":ReferenceAdapter"):
@@ -179,7 +205,13 @@ def check_configuration(cfg: C2CConfig) -> list[Check]:
 
 
 def check_caches(
-    *, layers: int = 4, hidden: int = 8, heads: int = 2, tokens: int = 6, seed: int = 42
+    *,
+    layers: int = 4,
+    hidden: int = 8,
+    heads: int = 2,
+    tokens: int = 6,
+    seed: int = 42,
+    verbose: bool = False,
 ) -> list[Check]:
     """Fuse two synthetic caches and measure the ranks — a miniature of the
     full pipeline, safe to run on any machine (no models are harmed)."""
@@ -240,11 +272,16 @@ def check_caches(
             )
         )
     except Exception as exc:  # the doctor reports, never rethrows
+        detail = f"{type(exc).__name__}: {exc}"
+        if verbose:
+            import traceback
+
+            detail += " || " + " | ".join(traceback.format_exception_only(exc))
         checks.append(
             Check(
                 "caches:fuse",
                 STATUS_FAIL,
-                f"{type(exc).__name__}: {exc}",
+                detail,
                 hint="re-run with C2C_DOCTOR_VERBOSE=1 and file a bug report",
             )
         )
@@ -267,14 +304,21 @@ def check_zoo(cfg: C2CConfig) -> Check:
 # ---------------------------------------------------------------------------
 
 
-def run_all(cfg: C2CConfig | None = None, *, verbose: bool = True) -> list[Check]:
-    """Run every check, in sections, and return the collected verdicts."""
+def run_all(cfg: C2CConfig | None = None, *, verbose: bool | None = None) -> list[Check]:
+    """Run every check, in sections, and return the collected verdicts.
+
+    ``verbose`` — or the environment, ``C2C_DOCTOR_VERBOSE=1`` — adds the
+    exception tracebacks to the failure details: the hint on the card, the
+    card on the wall, the wall in the bug report.
+    """
+    if verbose is None:
+        verbose = os.environ.get("C2C_DOCTOR_VERBOSE", "").lower() in ("1", "true", "yes", "on")
     cfg = cfg or C2CConfig()
     checks: list[Check] = [check_python()]
     checks += check_backends()
     checks += check_configuration(cfg)
     checks += check_engines()
-    checks += check_caches()
+    checks += check_caches(verbose=verbose)
     checks.append(check_zoo(cfg))
     return checks
 

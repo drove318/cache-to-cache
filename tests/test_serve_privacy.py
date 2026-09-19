@@ -28,6 +28,12 @@ class TestWireCrypto:
         assert secret not in frame  # the words, hidden
         assert self.crypto.open(frame) == secret  # opened, whole
 
+    def test_the_empty_message_is_a_legitimate_plaintext(self):
+        """GCM permits a zero-length body: the frame of nothing, 28 bytes."""
+        frame = self.crypto.seal(b"")
+        assert len(frame) == 12 + 16  # nonce ‖ tag, no ciphertext between
+        assert self.crypto.open(frame) == b""
+
     def test_authenticated_with_the_associated_data(self):
         """AAD: the header, bound to the body, verified on opening."""
         body = b"payload"

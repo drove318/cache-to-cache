@@ -17,6 +17,8 @@ import sys
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any
 
+from .types import normalize_fraction
+
 __all__ = [
     "C2CConfig",
     "FuserConfig",
@@ -86,6 +88,14 @@ class GateConfig:
     threshold: float = 0.5  # hard decision at inference: open if p > θ
     straight_through: bool = True  # ST-G estimator gradients, soft sampling
 
+    def __post_init__(self):
+        if not 0.0 < self.tau_min <= self.tau_max:
+            msg = f"require 0 < tau_min <= tau_max, got {self.tau_min} > {self.tau_max}?"
+            raise ValueError(msg)
+        if not 0.0 <= self.threshold <= 1.0:
+            msg = f"gate threshold {self.threshold!r} out of range [0, 1]"
+            raise ValueError(msg)
+
     def temperature_at(self, step: int, total_steps: int) -> float:
         """The linear temperature schedule τ(step) = τ_max − (τ_max−τ_min)·step/T."""
         if total_steps <= 0:
@@ -107,10 +117,7 @@ class BlendConfig:
     direction: str = "former"  # former | latter
 
     def __post_init__(self):
-        frac = self.fraction
-        if 1 < frac <= 100:  # tolerate percentages: 75 → 0.75
-            frac = frac / 100.0
-        object.__setattr__(self, "fraction", min(1.0, max(0.0, frac)))
+        object.__setattr__(self, "fraction", normalize_fraction(self.fraction))
         if self.direction not in ("former", "latter"):
             msg = f"blend direction must be 'former' or 'latter', not {self.direction!r}"
             raise ValueError(msg)
@@ -174,7 +181,8 @@ class ServeConfig:
     max_new_tokens: int = 64  # paper evaluation: max response 64
     communication_tokens_budget: int = 256  # paper: communication 256
     model_prefix: str = "c2c/"  # virtual model ids start with this prefix
-    pair_separator: str = "←"  # `c2c/<receiver>←<sharer>`; ASCII ok too
+    pair_separator: str = "←"  # the canonical one; ASCII alternatives below
+    pair_separators: tuple[str, ...] = ("←", "-->", "->", "→", "+", "--", ":")
     cors: bool = True
     privacy: bool = False  # --privacy: refuse the sharer, digest the logs (EX-5)
 
@@ -193,13 +201,17 @@ class ServeConfig:
         raw = model_id
         if raw.startswith(self.model_prefix):
             raw = raw[len(self.model_prefix) :]
-        for sep in (self.pair_separator, "+", "-->", "->", "→", "--", ":"):
+        for sep in self.separators():
             if sep in raw:
                 left, right = raw.split(sep, 1)
                 left, right = left.strip(), right.strip()
                 if left and right:
                     return (left, right)
         return None
+
+    def separators(self) -> tuple[str, ...]:
+        """The accepted pair separators: the configured one, first."""
+        return tuple(dict.fromkeys((self.pair_separator, *self.pair_separators)))
 
 
 @dataclass(frozen=True)
@@ -270,12 +282,23 @@ def _revalidate(root) -> None:
 
 
 def _dotted(root, path: str, value) -> None:
-    """Walk the dotted path down, set the value, then re-check invariants."""
+    """Walk the dotted path down, set the value, then re-check invariants.
+
+    A failed revalidation restores the previous value: an invalid setting
+    is *ignored*, as the log says it is — never half-written into the tree.
+    """
     parts = path.split(".")
+    owner = root
     for p in parts[:-1]:
-        root = getattr(root, p)
-    _write(root, parts[-1], value)
-    _revalidate(root)
+        owner = getattr(owner, p)
+    name = parts[-1]
+    old = getattr(owner, name)
+    try:
+        _write(owner, name, value)
+        _revalidate(owner)
+    except (TypeError, ValueError):
+        _write(owner, name, old)  # the invalid setting, undone
+        raise
 
 
 def from_env(config: C2CConfig | None = None, environ: dict[str, str] | None = None) -> C2CConfig:
@@ -333,8 +356,21 @@ def _merge(root, data: dict, warnings: list[str], prefix: str = "") -> None:
         if key not in names:
             warnings.append(f"unknown config key: {prefix}{key}")
             continue
-        _write(root, key, value)
-        _revalidate(root)
+        old = getattr(root, key)
+        if isinstance(old, bool) and not isinstance(value, bool):
+            value = _env_cast(str(value), bool)  # a quoted false, is false
+        elif isinstance(old, (int, float)) and not isinstance(old, bool) and isinstance(value, str):
+            try:
+                value = _env_cast(value, type(old))
+            except (TypeError, ValueError) as exc:
+                warnings.append(f"{prefix}{key}: unusable value {value!r} ({exc}); ignored")
+                continue
+        try:
+            _write(root, key, value)
+            _revalidate(root)
+        except (TypeError, ValueError) as exc:
+            warnings.append(f"{prefix}{key}: rejected ({exc}); using the previous value")
+            _write(root, key, old)  # the rejected setting, undone
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +400,7 @@ DESCRIPTION
     1. MODEL HEADS (attention heads).  hidden_size = num_heads × head_size.
        The dynamic weighting module (FuserConfig, FR-06) performs
        input-aware head modulation: it reweights the *projected*
-       information per token/query, one weight per attention head,
+       information per attention head, one weight per head,
        computed from the pooled key/value statistics of the incoming
        cache entries. MHA/GQA/MQA are distinguished via LayerGeometry.
        (See also: the rank of the KV-cache tensors, measured by
@@ -390,6 +426,8 @@ FILES
 ENVIRONMENT
     C2C_SEED               default seed (42)
     C2C_DEVICE             auto|cpu|cuda|mps
+    C2C_ROOT               state dir (default ~/.cache/c2c); consulted for
+                           the config file, the doctor, and the local zoo
     C2C_FUSER_VARIANT      simple | c2c-c (the C2C-C variant, FR-09)
     C2C_FUSER_DROPOUT      dropout of the fuser paths, 0..1
     C2C_GATE_TAU_MAX       Gumbel-Sigmoid start temperature (1.0)
@@ -399,6 +437,9 @@ ENVIRONMENT
     C2C_ALIGN_TOKEN_COLLISION   maximal-coverage | first-occurrence
     C2C_ALIGN_LAYERS       terminal | depth-normalized
     C2C_LR                 learning rate of the linear scheduler (1e-4)
+    C2C_MACRO_BATCH          macro batch size of the epoch (256)
+    C2C_MAX_SEQ              max sequence length of a sample (2048)
+    C2C_TOTAL_STEPS          optimisation steps of the epoch (1929)
     C2C_PORT / C2C_HOST / C2C_API_KEY        serve front
     C2C_PRIVACY            EX-5 privacy mode on/off
 

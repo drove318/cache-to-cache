@@ -13,7 +13,7 @@ The published reference values are collected in :mod:`c2c.eval.golden`.
 
 from __future__ import annotations
 
-from .enrich import EnrichmentOracle, EnrichmentResult
+from .enrich import METHODS, EnrichmentOracle, EnrichmentResult
 
 #: the numerics of the package — the t-SNE oracle and its measures
 _TRANSFORM_NAMES = ("TransformationOracle", "TransformationResult")
@@ -34,4 +34,10 @@ def __dir__() -> list[str]:
     return sorted(set(__all__) | {"__getattr__", "__dir__"})
 
 
-__all__ = ["EnrichmentOracle", "EnrichmentResult", "TransformationOracle", "TransformationResult"]
+__all__ = [
+    "EnrichmentOracle",
+    "EnrichmentResult",
+    "METHODS",
+    "TransformationOracle",
+    "TransformationResult",
+]

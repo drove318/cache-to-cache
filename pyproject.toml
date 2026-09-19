@@ -89,8 +89,8 @@ mlx = "c2c.integrations.mlx:MLXAdapter"
 echo = "c2c.serve.echo:EchoEngine"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers"]
+testpaths = ["tests", "src/c2c/probes"]
+addopts = ["-ra", "--strict-markers", "--doctest-modules"]
 markers = [
   "gpu: needs CUDA + a real engine (paper-table reproduction; skipped without)",
   "network: needs internet (dataset/model download; skipped in offline CI)",

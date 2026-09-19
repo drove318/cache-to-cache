@@ -36,7 +36,7 @@ DEFAULT_FIXTURES = os.path.join(_ROOT, "tests", "fixtures")
 
 #: letter of the choices, as the papers put them: (A) (B) (C) (D) …
 _LETTERS = "ABCDEFGHIJ"
-_LETTER_RE = re.compile(r"(?:^|[\s\(\[])([A-J])[\)\.\:\s\]]")
+_LETTER_RE = re.compile(r"(?:^|[\s\(\[])([A-J])(?:[\)\.\:\s\]]|$)")
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,17 @@ class Benchmark:
     official_prompt: bool = False  # LongBench uses its official prompt template
 
     def prompt_for(self, item: dict) -> str:
-        """Render the zero-shot prompt for one item, choices and all."""
+        """Render the zero-shot prompt for one item, choices and all.
+
+        Benchmarks flagged ``official_prompt`` (LongBench) ship each record
+        with the published template under ``"prompt"``; there is nothing to
+        render, and a record without one is a fixture error, said loudly.
+        """
+        if self.official_prompt:
+            if "prompt" not in item:
+                msg = f"{self.name}: official-prompt benchmark, record carries no 'prompt'"
+                raise KeyError(msg)
+            return item["prompt"]
         choices = item.get("choices") or []
         lettered = "\n".join(f"({_LETTERS[i]}) {c}" for i, c in enumerate(choices))
         return (
@@ -114,19 +124,19 @@ def load_benchmark(
 def extract_answer(reply: str, choices: Sequence[str] | None = None) -> int | None:
     """Match a generated reply against the choices, letters first.
 
-    Order of matching: an explicit letter (A–J, in parentheses, with a dot
-    or a colon), else an exact choice text, else nothing (None → scored as
-    incorrect). The answer space is the index into ``choices``.
+    Order of matching — the paper's rule: the first explicit choice letter
+    (A–J, uppercase, delimited by space, bracket, punctuation, or either
+    end of the reply) found anywhere in the reply; failing that, an exact
+    choice text; failing that, nothing (None → scored as incorrect). The
+    answer space is the index into ``choices``.
     """
     text = (reply or "").strip()
     if not text:
         return None
-    m = _LETTER_RE.match(text) or _LETTER_RE.search(text[:4])
-    if m:
+    for m in _LETTER_RE.finditer(text):
         idx = _LETTERS.find(m.group(1))
-        if 0 <= idx:
-            if choices is None or idx < len(choices):
-                return idx
+        if 0 <= idx and (choices is None or idx < len(choices)):
+            return idx
     lowered = text.lower()
     for i, choice in enumerate(choices or ()):
         c = str(choice).strip().lower()

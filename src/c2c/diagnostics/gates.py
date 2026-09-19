@@ -7,7 +7,7 @@ on the selected layers.** This module turns that observation into a
 measurable reading — one :class:`GateReading` per gate — and a
 deterministic classifier.
 
-The three regimes are named after the paper's Figure 10/11 vocabulary::
+The three regimes render the paper's A.4.2 observation as a reading::
 
     general  → broad-open  + small weights
     mixed    → in between (report it, but do not force a label)
@@ -37,7 +37,9 @@ class GateReading:
         share of open gates at inference (hard decisions, p > threshold).
     mean_weight
         mean |gᵗ| over the *open* gates — the modulation strength the
-        surviving contributions carry when they are injected.
+        surviving contributions carry when they are injected. Zero when
+        nothing was measured, or when no gate stands open: unknown,
+        reported as zero, never invented.
     regime
         the label assigned by :func:`classify_regime`; one of :data:`REGIMES`.
     """

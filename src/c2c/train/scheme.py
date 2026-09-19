@@ -268,10 +268,19 @@ class Trainer:
         for instrument in (provider_r, provider_s, injector):
             for p in getattr(instrument, "parameters", lambda: [])():
                 p.requires_grad_(False)
-            # the frozen models travel with the fuser, on one device, together
-            module = getattr(instrument, "engine", instrument)
-            if isinstance(module, torch.nn.Module):
-                module.to(device=torch.device(self.device))
+            # the frozen models travel with the fuser, on one device, together:
+            # a loaded net is moved outright; a lazy adapter is pinned, so the
+            # first load lands on the right device. The options dict is
+            # read-only everywhere; pinning the device is the one write allowed.
+            for attr in ("engine", "_model", "model"):
+                module = getattr(instrument, attr, None)
+                if isinstance(module, nn.Module):
+                    module.to(device=torch.device(self.device))
+                    break
+            else:
+                options = getattr(instrument, "options", None)
+                if isinstance(options, dict) and not options.get("device"):
+                    options["device"] = self.device
         for p in self.fuser.parameters():
             p.requires_grad_(True)
         self.fuser.to(device=torch.device(self.device))
@@ -328,10 +337,12 @@ class Trainer:
                 "use an adapter that honours the interface (reference, HF, vLLM)"
             )
             raise TypeError(msg)
-        logits = score(y_r_ids)  # [T, vocab], row t predicts t+1
         if len(y_r_ids) < 2:
+            # the check, first; the forward, second: one token teaches
+            # nothing, and the engine shall not be asked to score it
             msg = "response needs at least two tokens for next-token supervision"
             raise ValueError(msg)
+        logits = score(y_r_ids)  # [T, vocab], row t predicts t+1
         target = torch.as_tensor(y_r_ids[1:], dtype=torch.long, device=logits.device)
         loss = nn.functional.cross_entropy(logits[:-1].reshape(-1, logits.shape[-1]), target)
         return loss
@@ -345,8 +356,18 @@ class Trainer:
         on_step=None,
         target_loss: float = 2.0,
     ) -> TrainingResult:
-        """Train the fuser; the two LLMs do not learn a thing."""
-        epochs = epochs or self.recipe.epochs
+        """Train the fuser; the two LLMs do not learn a thing.
+
+        The loop, its steps, their meaning: one sample seen, one optimizer
+        step taken; ``total_steps`` is the budget, the ledger counts steps.
+        The paper's schedule (App. A.3.5 — 500 000 samples, macro batch 256,
+        ≈1929 steps) is realised by the caller's corpus: pass a dataset that
+        yields the samples the recipe names and a budget that bounds them.
+        ``recipe.macro_batch_size`` is published for the man page, never read
+        by this loop. ``converged_train_at`` counts the loop's own steps, in
+        the same units as the budget — not the paper's macro-batch counters.
+        """
+        epochs = self.recipe.epochs if epochs is None else epochs
         result = TrainingResult()
         self.fuser.train(True)
         manual_seed(self.recipe.seed)
@@ -386,6 +407,14 @@ class Trainer:
 
     # -- checkpoint / resume (FR-15) ────────────────────────────────────────
     def save_checkpoint(self, path: str) -> str:
+        """Persist the trained fuser: weights, optimizer, recipe, geometries.
+
+        The name is the container's contract: ``*.safetensors`` writes the
+        real safetensors format (weights plus a ``c2c-json`` header of recipe
+        and geometries); anything else writes torch's zip pickle. The
+        optimizer's state rides only in the zip — a ``.safetensors`` run
+        resumes the nets, fresh optimizers, new momentum.
+        """
         directory = os.path.dirname(os.path.abspath(path))
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -436,8 +465,15 @@ class Trainer:
         if "optimizer" in blob:
             try:
                 self.optimizer.load_state_dict(blob["optimizer"])
-            except (ValueError, KeyError):
-                pass  # optimizer state is advisory
+            except (ValueError, KeyError) as exc:
+                # the optimizer's state is advisory: the weights have landed,
+                # the momentum may not — say so, do not perish the reason
+                import sys
+
+                sys.stderr.write(
+                    f"[c2c-train] the fuser's weights did load; the optimizer's "
+                    f"state did not fit and was left behind: {exc}\n"
+                )
         return blob.get("recipe", {})
 
     # -- evaluation ─────────────────────────────────────────────────────────
@@ -449,12 +485,16 @@ class Trainer:
         """
         self.fuser.eval()
         losses: list[float] = []
-        for i, sample in enumerate(dataset):
-            if limit is not None and i >= limit:
-                break
-            with torch.no_grad():
-                self._step = self.total_steps
-                loss = self.training_step(sample)
-                losses.append(float(loss.detach()))
-        self.fuser.train(True)
+        try:
+            for i, sample in enumerate(dataset):
+                if limit is not None and i >= limit:
+                    break
+                with torch.no_grad():
+                    self._step = self.total_steps
+                    loss = self.training_step(sample)
+                    losses.append(float(loss.detach()))
+        finally:
+            # the mode, restored even when a sample raises: an evaluation
+            # under wayward circumstances must leave the nets fit for the next run
+            self.fuser.train(True)
         return sum(losses) / len(losses) if losses else float("nan")

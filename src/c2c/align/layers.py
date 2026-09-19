@@ -59,7 +59,7 @@ class LayerMapping(Sequence):
     layers in both traversals::
 
         for pair in mapping.pairs():      # receiver-major, input → output
-        for pair in reversed(mapping):    # last layer first (terminal order)
+        for pair in mapping.reversed():   # last layer first (terminal order)
     """
 
     def __init__(self, receiver_layers: int, sharer_layers: int, mode: str = "terminal"):

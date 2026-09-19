@@ -84,8 +84,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     cfg = load_config(args.config)
     checks = run_all(cfg)
-    print(format_report(checks, title="c2c doctor"))
+    report = format_report(checks, title="c2c doctor")
     if args.report:
+        # one output, one channel: when the machine-readable manifest is
+        # asked for, it is the output proper — the human report rides to
+        # stderr beside it, and `c2c doctor --report | jq` stays clean
+        print(report, file=sys.stderr)
         import json as _json
 
         rows = [
@@ -93,6 +97,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             for c in checks
         ]
         print(_json.dumps({"doctor": "c2c", "checks": rows}, indent=2, sort_keys=True))
+    else:
+        print(report)
     failed = any(c.status == "fail" for c in checks)
     return 1 if (failed and args.strict) else 0
 
@@ -174,7 +180,9 @@ def cmd_fuse(args: argparse.Namespace) -> int:
     if args.answer:
         adapter_r.install(fused, r_ids)
         reply = adapter_r.generate(
-            r_ids, max_new_tokens=args.max_new_tokens or 16, temperature=args.temperature or 0.0
+            r_ids,
+            max_new_tokens=(args.max_new_tokens if args.max_new_tokens is not None else 16),
+            temperature=(args.temperature if args.temperature is not None else 0.0),
         )
         print(f"  reply: {style(reply or '(silence — an untrained reply)', 'cyan')}")
     return 0
@@ -230,16 +238,18 @@ def cmd_train(args: argparse.Namespace) -> int:
     )
     recipe = TrainRecipe(
         dataset=args.dataset,
-        num_samples=args.num_samples or cfg.train.num_samples,
-        max_seq_length=args.max_seq_length or cfg.train.max_seq_length,
-        epochs=args.epochs or cfg.train.epochs,
+        num_samples=(args.num_samples if args.num_samples is not None else cfg.train.num_samples),
+        max_seq_length=(
+            args.max_seq_length if args.max_seq_length is not None else cfg.train.max_seq_length
+        ),
+        epochs=args.epochs if args.epochs is not None else cfg.train.epochs,
         macro_batch_size=cfg.train.macro_batch_size,
         learning_rate=args.lr if args.lr is not None else cfg.train.learning_rate,
         warmup_ratio=cfg.train.warmup_ratio,
         weight_decay=cfg.train.weight_decay,
         max_grad_norm=cfg.train.max_grad_norm,
         seed=seed,
-        total_steps=args.total_steps or cfg.train.total_steps,
+        total_steps=args.total_steps if args.total_steps is not None else cfg.train.total_steps,
     )
     manual_seed(seed)
     trainer = Trainer(
@@ -269,7 +279,8 @@ def cmd_train(args: argparse.Namespace) -> int:
         if bar is not None:
             bar.update()
         if args.verbose and (step == 1 or step % 25 == 0):
-            bar.close() if bar is not None else None
+            if bar is not None:
+                sys.stderr.write("\n")  # finish the bar's line before printing over it
             print(f"  step {step:>5} loss {loss:0.4f} |grad| {gnorm:0.3f}")
 
     result = trainer.fit(dataset, epochs=recipe.epochs, on_step=on_step)
@@ -474,7 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--report",
         action="store_true",
-        help="also print the machine-readable manifest (JSON), for the pipelines",
+        help="print the machine-readable manifest (JSON) alone, for the pipelines",
     )
     p.set_defaults(func=cmd_doctor)
 

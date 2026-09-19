@@ -12,7 +12,7 @@ Requires the optional peer ``llama-cpp-python``; import is deferred.
 from __future__ import annotations
 
 from ..types import LayeredCache, LayerGeometry, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["LlamaCppAdapter", "available"]
 
@@ -28,6 +28,7 @@ class LlamaCppAdapter(EngineAdapter):
 
     engine_name = "llama.cpp"
     required_extra = "llama-cpp"
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
     DEGRADATION = (
         "the bindings keep the cache behind opaque handles: "
         "prefill-only capture; fusion reduced to the receiver's own cache"
@@ -67,7 +68,11 @@ class LlamaCppAdapter(EngineAdapter):
                 layers=n_layer,
                 hidden_size=max(n_embd, 1),
                 num_heads=max(n_head, 1),
-                name=self.model_id,
+                name=(
+                    self.model_id
+                    if any(getattr(ctx, f, None) for f in ("n_layer", "n_head", "n_embd"))
+                    else f"{self.model_id} (geometry unknown — the bindings tell none)"
+                ),
             ),
             family="llama.cpp",
             instruction_tuned=bool(self.options.get("instruction_tuned", True)),
@@ -94,9 +99,10 @@ class LlamaCppAdapter(EngineAdapter):
         sampler = ctx.get_default_sampler(
             mapping=self._lc.DEFAULT_SAMPLER_MAPPING, temperature=float(temperature or 0.0)
         )
-        return sampler.complete(
+        response = sampler.complete(
             ctx, prompt=text, max_tokens=int(max_new_tokens), stop=list(stop) if stop else None
         )
+        return truncated(str(response), stop)  # the bindings may not honour stop; we do
 
     def encode(self, text: str):
         ctx = self._ensure()
@@ -105,6 +111,3 @@ class LlamaCppAdapter(EngineAdapter):
     def decode_tokens(self, token_ids):
         ctx = self._ensure()
         return ctx.detokenize(list(token_ids), skip_special_tokens=True)
-
-    def available_capabilities(self):
-        return super().available_capabilities()

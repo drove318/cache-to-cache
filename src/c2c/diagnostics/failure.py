@@ -20,8 +20,9 @@ confidence
     blamed for noise, an open gate with a huge delta deserves a look);
 
 suspect
-    True when an open gate moved the cache beyond ``threshold`` — the
-    layers to blame when a reply goes wrong, per FR-17.
+    True when an *open* gate (g > 0.5, the majority convention) moved
+    the cache beyond ``threshold`` — the layers to blame when a reply
+    goes wrong, per FR-17.
 
 Every reading is emitted as one structured log record (JSON per line,
 ``logging`` module, dedicated handler) — never printed to the terminal
@@ -36,7 +37,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
-from ..types import LayeredCache
+from ..types import GATE_OPEN_THRESHOLD, LayeredCache
 
 __all__ = ["LayerAttribution", "FailureProbe", "StructuredLog"]
 
@@ -78,7 +79,13 @@ class StructuredLog(logging.Logger):
     def log_attribution(self, **fields) -> None:
         """Emit one structured record; returns immediately, never blocks."""
         clean = {
-            k: (round(v, 6) if isinstance(v, float) and math.isfinite(v) else v)
+            k: (
+                round(v, 6)
+                if isinstance(v, float) and math.isfinite(v)
+                else str(v)
+                if isinstance(v, float)
+                else v
+            )
             for k, v in fields.items()
         }
         line = json.dumps(clean, ensure_ascii=False, sort_keys=True, default=str)
@@ -146,7 +153,7 @@ class FailureProbe:
             delta_v = self._magnitude(self._difference(f.value, o.value))
             contribution = (delta_k + delta_v) / ((own_k + own_v) + _EPS)
             confidence = float(g) * contribution
-            suspect = float(g) > 0.5 and contribution > self.threshold
+            suspect = float(g) > GATE_OPEN_THRESHOLD and contribution > self.threshold
             note = ""
             if suspect:
                 note = (

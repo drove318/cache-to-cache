@@ -205,10 +205,43 @@ class TestErrors:
         assert status == 400  # bad request, good body
 
     def test_options_gives_cors_headers(self, server):
-        """The preflight, answered."""
-        status, body = _request(f"{server}/v1/chat/completions", method="OPTIONS")
+        """The preflight, answered — and answered with the banner, hoisted."""
+        request = urllib.request.Request(
+            f"{server}/v1/chat/completions", method="OPTIONS", headers=AUTH
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            status = response.status
+            headers = response.headers
         assert status in (200, 204)  # the door, open
-        assert status != 500  # the server, awake
+        assert headers["Access-Control-Allow-Origin"] == "*"  # the banner, hoisted
+        assert "Authorization" in headers["Access-Control-Allow-Headers"]
+        assert {"GET", "POST", "OPTIONS"} <= {
+            m.strip() for m in headers["Access-Control-Allow-Methods"].split(",")
+        }
+
+    def test_a_declared_body_past_the_ceiling_is_refused_unread(self, server):
+        """A declared length beyond the ceiling: 413, before a byte is read."""
+        request = urllib.request.Request(
+            f"{server}/v1/chat/completions",
+            data=None,
+            method="POST",
+            headers={
+                **AUTH,
+                "Content-Type": "application/json",
+                "Content-Length": "999999999999",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                status, body = response.status, response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            status, body = exc.code, exc.read().decode("utf-8")
+        assert status == 413  # refused, unread — the wire, untouched
+        error = json.loads(body)["error"]
+        assert error["code"] == "request_entity_too_large"  # the code, as worn
+        assert error["param"] == "body"  # the parameter, blamed
+        assert error["type"] == "invalid_request_error"  # the kind, as filed
+        assert "ceiling" in error["message"]  # the reason, given, in the message
 
 
 class TestCanonicalRoutes:

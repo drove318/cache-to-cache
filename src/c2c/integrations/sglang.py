@@ -12,7 +12,7 @@ Requires the ``sglang`` package; the import is deferred.
 from __future__ import annotations
 
 from ..types import LayeredCache, LayerSlice, ModelSpec
-from .registry import AdapterNotSupported, EngineAdapter
+from .registry import AdapterNotSupported, EngineAdapter, truncated
 
 __all__ = ["SGLangAdapter", "available"]
 
@@ -28,7 +28,8 @@ class SGLangAdapter(EngineAdapter):
 
     engine_name = "SGLang"
     required_extra = "sglang"
-    DEGRADATION = (
+    TOOLS = "ignored"  # the generate accepts them, the engine ignores them
+    DEGRADATION_IF = (
         "no RadixAttention cache hooks in this build: prefill-only "
         "capture, fusion quality limited to the receiver's own cache"
     )
@@ -120,16 +121,10 @@ class SGLangAdapter(EngineAdapter):
             },
             prefix_cache=layers,
         )
-        return str(out)
+        return truncated(str(out), stop)  # the runtime cuts on its own; we cut as well
 
     def encode(self, text: str):
         return self._ensure_runtime().tokenize(text)
 
     def decode_tokens(self, token_ids):
         return self._ensure_runtime().detokenize(list(token_ids))
-
-    def available_capabilities(self):
-        caps = super().available_capabilities()
-        if self._degraded:
-            caps.append(f"degraded:{self.DEGRADATION}")
-        return caps
