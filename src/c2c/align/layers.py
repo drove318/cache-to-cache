@@ -34,9 +34,9 @@ def _terminal_table(receiver_layers: int, sharer_layers: int) -> list[int]:
     """Build G by pairing, terminal alignment (paper §3.3.3, verbatim)."""
     table: list[int] = []
     for n in range(receiver_layers):
-        offset = receiver_layers - 1 - n           # distance from the last layer
-        g = sharer_layers - 1 - offset             # counterclockwise on the sharer
-        table.append(min(max(g, 0), sharer_layers - 1))   # keep in range
+        offset = receiver_layers - 1 - n  # distance from the last layer
+        g = sharer_layers - 1 - offset  # counterclockwise on the sharer
+        table.append(min(max(g, 0), sharer_layers - 1))  # keep in range
     return table
 
 
@@ -45,8 +45,9 @@ def _depth_normalized_table(receiver_layers: int, sharer_layers: int) -> list[in
     if receiver_layers <= 1:
         return [sharer_layers - 1] * receiver_layers
     scale = (sharer_layers - 1) / (receiver_layers - 1)
-    return [min(max(int(round(n * scale + 0.5)), 0), sharer_layers - 1)
-            for n in range(receiver_layers)]
+    return [
+        min(max(int(round(n * scale + 0.5)), 0), sharer_layers - 1) for n in range(receiver_layers)
+    ]
 
 
 _TABLES = {"terminal": _terminal_table, "depth-normalized": _depth_normalized_table}
@@ -63,8 +64,7 @@ class LayerMapping(Sequence):
         for pair in reversed(mapping):    # last layer first (terminal order)
     """
 
-    def __init__(self, receiver_layers: int, sharer_layers: int,
-                 mode: str = "terminal"):
+    def __init__(self, receiver_layers: int, sharer_layers: int, mode: str = "terminal"):
         if mode not in _TABLES:
             msg = f"unknown alignment mode {mode!r}; choose one of {LAYER_MODES}"
             raise ValueError(msg)
@@ -94,9 +94,11 @@ class LayerMapping(Sequence):
 
     def __repr__(self):
         body = ", ".join(str(g) for g in self._table)
-        return (f"LayerMapping(mode={self.mode!r}, "
-                f"receiver={self.receiver_layers}, sharer={self.sharer_layers}, "
-                f"G=[{body}])")
+        return (
+            f"LayerMapping(mode={self.mode!r}, "
+            f"receiver={self.receiver_layers}, sharer={self.sharer_layers}, "
+            f"G=[{body}])"
+        )
 
     # domain helpers ──────────────────────────────────────────────────────
     def pairs(self) -> Iterator[tuple[int, int]]:
@@ -107,8 +109,9 @@ class LayerMapping(Sequence):
         """The same pairs traversed from the last layer backwards."""
         return ((n, g) for n, g in reversed(list(enumerate(self._table))))
 
-    def validate(self, receiver_layers: int | None = None,
-                 sharer_layers: int | None = None) -> list[str]:
+    def validate(
+        self, receiver_layers: int | None = None, sharer_layers: int | None = None
+    ) -> list[str]:
         """Diagnostics: report geometry mismatches as human-readable strings.
 
         An empty list means the mapping is consistent with both caches.
@@ -116,18 +119,14 @@ class LayerMapping(Sequence):
         problems: list[str] = []
         if receiver_layers is not None and receiver_layers != self.receiver_layers:
             problems.append(
-                f"receiver has {receiver_layers} layers, mapping covers "
-                f"{self.receiver_layers}"
+                f"receiver has {receiver_layers} layers, mapping covers {self.receiver_layers}"
             )
         if sharer_layers is not None:
             if min(self._table) < 0 or max(self._table) >= sharer_layers:
-                problems.append(
-                    f"mapping indexes outside sharer range [0, {sharer_layers - 1}]"
-                )
+                problems.append(f"mapping indexes outside sharer range [0, {sharer_layers - 1}]")
             if sharer_layers != self.sharer_layers:
                 problems.append(
-                    f"sharer has {sharer_layers} layers, mapping was built for "
-                    f"{self.sharer_layers}"
+                    f"sharer has {sharer_layers} layers, mapping was built for {self.sharer_layers}"
                 )
         return problems
 

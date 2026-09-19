@@ -28,8 +28,8 @@ from dataclasses import dataclass
 
 __all__ = ["WireCrypto", "NoTextFilter", "PrivacyGuard"]
 
-_KEY_BYTES = 32                                            # 256-bit keys
-_NONCE_BYTES = 12                                          # 96-bit nonces, as AES-GCM likes
+_KEY_BYTES = 32  # 256-bit keys
+_NONCE_BYTES = 12  # 96-bit nonces, as AES-GCM likes
 _TAG_BYTES = 16
 
 
@@ -46,8 +46,10 @@ def _match_by_codes(module, codes, *, container):
         if [ord(ch) for ch in name] == list(codes):
             return getattr(module, name)
     wanted = bytes(codes).decode("ascii")
-    msg = (f"the cryptography peer exposes no {container} member {wanted!r}; "
-          f"peer too old? upgrade cryptography")
+    msg = (
+        f"the cryptography peer exposes no {container} member {wanted!r}; "
+        f"peer too old? upgrade cryptography"
+    )
     raise ModuleNotFoundError(msg)
 
 
@@ -60,16 +62,15 @@ class WireCrypto:
 
     def __init__(self, key: bytes):
         if not isinstance(key, (bytes, bytearray)) or len(key) != _KEY_BYTES:
-            got = (len(key) if isinstance(key, (bytes, bytearray))
-                  else type(key).__name__)
+            got = len(key) if isinstance(key, (bytes, bytearray)) else type(key).__name__
             msg = f"the privacy key must be exactly {_KEY_BYTES} bytes (256 bits), got {got}"
             raise ValueError(msg)
         try:
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         except ImportError as exc:
             raise ModuleNotFoundError(
-                "AES-GCM on the wire needs the cryptography peer "
-                "(pip install 'c2c-cache[crypto]')") from exc
+                "AES-GCM on the wire needs the cryptography peer (pip install 'c2c-cache[crypto]')"
+            ) from exc
         self._Cipher = Cipher
         self._AES = _match_by_codes(algorithms, (0x41, 0x45, 0x53), container="algorithms")
         self._GCM = _match_by_codes(modes, (0x47, 0x43, 0x4D), container="modes")
@@ -113,11 +114,14 @@ class WireCrypto:
         decryptor.authenticate_additional_data(associated_data or b"")
         plain = decryptor.update(cipher_text)
         from cryptography.exceptions import InvalidTag  # the peer, imported
+
         try:
             return plain + decryptor.finalize_with_tag(tag)
         except InvalidTag as exc:
-            msg = ("frame does not authenticate: tampered, or wrong key, or wrong "
-                 f"associated data (tag {tag.hex()[:8]}…)")
+            msg = (
+                "frame does not authenticate: tampered, or wrong key, or wrong "
+                f"associated data (tag {tag.hex()[:8]}…)"
+            )
             raise ValueError(msg) from exc
 
 
@@ -141,9 +145,14 @@ class NoTextFilter:
     def filter(self, obj):
         """Return a copy of *obj* with textual payloads replaced by digests."""
         if isinstance(obj, dict):
-            return {key: (value if (isinstance(key, str) and key in self.keep_keys)
-                        else self.filter(value))
-                   for key, value in obj.items()}
+            return {
+                key: (
+                    value
+                    if (isinstance(key, str) and key in self.keep_keys)
+                    else self.filter(value)
+                )
+                for key, value in obj.items()
+            }
         if isinstance(obj, tuple):
             return tuple(self.filter(item) for item in obj)
         if isinstance(obj, list):

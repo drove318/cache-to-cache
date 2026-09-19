@@ -28,9 +28,16 @@ def supports_color(stream=None) -> bool:
 
 _RESET, _BOLD, _DIM = "0", "1", "2"
 _COLORS = {
-    "reset": _RESET, "bold": _BOLD, "dim": _DIM,
-    "red": "31", "green": "32", "yellow": "33", "blue": "34",
-    "magenta": "35", "cyan": "36", "grey": "90",
+    "reset": _RESET,
+    "bold": _BOLD,
+    "dim": _DIM,
+    "red": "31",
+    "green": "32",
+    "yellow": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "grey": "90",
 }
 
 
@@ -75,7 +82,9 @@ class Table:
 class Progress:
     """A progress bar for training and fusion sweeps (TTY-aware, no-op when piped)."""
 
-    def __init__(self, total: int, *, label: str = "", width: int = 36, enabled: bool | None = None):
+    def __init__(
+        self, total: int, *, label: str = "", width: int = 36, enabled: bool | None = None
+    ):
         self.total = max(1, int(total))
         self.label = label
         self.width = width
@@ -87,6 +96,7 @@ class Progress:
     @staticmethod
     def _time():
         import time
+
         return time.monotonic()
 
     def update(self, n: int = 1) -> None:
@@ -98,7 +108,9 @@ class Progress:
         bar = "█" * filled + "░" * (self.width - filled)
         el = self._time() - self._t0
         eta = (el / self._done) * (self.total - self._done) if self._done else 0.0
-        sys.stderr.write(f"\r{self.label:<14} [{bar}] {frac:3.0%} {self._done}/{self.total} eta {eta:4.0f}s")
+        sys.stderr.write(
+            f"\r{self.label:<14} [{bar}] {frac:3.0%} {self._done}/{self.total} eta {eta:4.0f}s"
+        )
         sys.stderr.flush()
 
     def close(self) -> None:

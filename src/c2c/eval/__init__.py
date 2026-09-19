@@ -28,5 +28,4 @@ from .benchmarks import BENCHMARKS, load_benchmark
 from .golden import FIGURES, TABLES, UNAVAILABLE
 from .runner import compare, run
 
-__all__ = ["TABLES", "FIGURES", "UNAVAILABLE", "BENCHMARKS", "load_benchmark",
-          "compare", "run"]
+__all__ = ["TABLES", "FIGURES", "UNAVAILABLE", "BENCHMARKS", "load_benchmark", "compare", "run"]

@@ -53,8 +53,9 @@ class Projection(nn.Module):
         delta:  [n_tokens, d_model]
     """
 
-    def __init__(self, d_receiver: int, d_sharer: int, d_model: int | None = None,
-                 activation: str = "gelu"):
+    def __init__(
+        self, d_receiver: int, d_sharer: int, d_model: int | None = None, activation: str = "gelu"
+    ):
         super().__init__()
         d_model = d_model or d_receiver
         self.d_in = d_receiver + d_sharer
@@ -82,17 +83,18 @@ class DynamicWeighting(nn.Module):
         weights:    [num_heads]
     """
 
-    def __init__(self, num_heads: int, head_size: int, halves: int = 1,
-                 hidden: int = 0):
+    def __init__(self, num_heads: int, head_size: int, halves: int = 1, hidden: int = 0):
         super().__init__()
         if num_heads <= 0 or head_size <= 0 or halves <= 0:
-            msg = (f"invalid head configuration: heads={num_heads}, "
-                  f"head_size={head_size}, halves={halves}")
+            msg = (
+                f"invalid head configuration: heads={num_heads}, "
+                f"head_size={head_size}, halves={halves}"
+            )
             raise ValueError(msg)
         self.num_heads = num_heads
         self.head_size = head_size
         self.halves = halves
-        stats_dim = 2 * halves * num_heads * head_size   # mean and max per entry
+        stats_dim = 2 * halves * num_heads * head_size  # mean and max per entry
         hidden = hidden or max(16, stats_dim // 4)
         self.modulation = nn.Sequential(
             nn.Linear(stats_dim, hidden),
@@ -136,8 +138,15 @@ class Gate(nn.Module):
     of the Bernoulli trial).
     """
 
-    def __init__(self, n_mapped: int, *, tau_max: float = 1.0, tau_min: float = 0.001,
-                 threshold: float = 0.5, straight_through: bool = True):
+    def __init__(
+        self,
+        n_mapped: int,
+        *,
+        tau_max: float = 1.0,
+        tau_min: float = 0.001,
+        threshold: float = 0.5,
+        straight_through: bool = True,
+    ):
         super().__init__()
         if n_mapped <= 0:
             msg = f"number of mapped layers must be positive, got {n_mapped}"
@@ -161,7 +170,9 @@ class Gate(nn.Module):
         frac = min(1.0, max(0.0, step / total_steps))
         return self.tau_max + (self.tau_min - self.tau_max) * frac
 
-    def gumbel_noise(self, shape: tuple[int, ...], generator: torch.Generator | None = None) -> Tensor:
+    def gumbel_noise(
+        self, shape: tuple[int, ...], generator: torch.Generator | None = None
+    ) -> Tensor:
         """Sample standard Gumbel(0, 1) noise by the inverse-transform method."""
         u = torch.rand(shape, generator=generator, device=self.logits.device)
         u = u.clamp(min=torch.finfo(torch.float32).tiny, max=1.0 - torch.finfo(torch.float32).eps)
@@ -174,8 +185,14 @@ class Gate(nn.Module):
         """Inference-time decision: open iff logit > 0 (the sign)."""
         return (self.logits > 0.0).to(self.logits.dtype)
 
-    def forward(self, *, training: bool | None = None, step: int | None = None,
-                total_steps: int | None = None, generator: torch.Generator | None = None) -> Tensor:
+    def forward(
+        self,
+        *,
+        training: bool | None = None,
+        step: int | None = None,
+        total_steps: int | None = None,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
         """Return one gate value g_n per mapped layer, in [0, 1]."""
         training = self.training if training is None else training
         if not training:

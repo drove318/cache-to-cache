@@ -33,7 +33,7 @@ def normalize_fraction(fraction: float) -> float:
     Values outside both ranges are configuration errors, loudly reported.
     """
     f = float(fraction)
-    if 1.0 < f <= 100.0:            # percentage form
+    if 1.0 < f <= 100.0:  # percentage form
         f = f / 100.0
     if not 0.0 <= f <= 1.0:
         msg = f"fused fraction {fraction!r} out of range [0, 1] (or [0, 100])"
@@ -68,8 +68,13 @@ def _blend_rows(base_rows, fused_rows, count: int, direction: BlendDirection):
     return concat_rows(base_rows[:split], fused_rows[split:])
 
 
-def apply(base: LayeredCache, fused: LayeredCache, *, fraction: float = 1.0,
-          direction: BlendDirection | str = BlendDirection.FORMER) -> LayeredCache:
+def apply(
+    base: LayeredCache,
+    fused: LayeredCache,
+    *,
+    fraction: float = 1.0,
+    direction: BlendDirection | str = BlendDirection.FORMER,
+) -> LayeredCache:
     """Blend a fused cache into its base, replacing ``fraction`` of the rows.
 
     Layer by layer, the selected rows are taken ``from fused``, the rest
@@ -90,15 +95,19 @@ def apply(base: LayeredCache, fused: LayeredCache, *, fraction: float = 1.0,
     return LayeredCache(blended)
 
 
-def sweep(base: LayeredCache, fused: LayeredCache, *,
-          fractions: list[float] | None = None,
-          direction: BlendDirection | str = BlendDirection.FORMER) -> Iterator[tuple[float, LayeredCache]]:
+def sweep(
+    base: LayeredCache,
+    fused: LayeredCache,
+    *,
+    fractions: list[float] | None = None,
+    direction: BlendDirection | str = BlendDirection.FORMER,
+) -> Iterator[tuple[float, LayeredCache]]:
     """Yield ``(fraction, cache)`` pairs for the Fig. 11 accuracy curve.
 
     A generator: the caller may stop early — plotting the whole sweep is
     the evaluation harness' job (``c2c.eval``), not ours.
     """
     if fractions is None:
-        fractions = [i / 10 for i in range(11)]           # 0.0 … 1.0, step 0.1
+        fractions = [i / 10 for i in range(11)]  # 0.0 … 1.0, step 0.1
     for fr in fractions:
         yield normalize_fraction(fr), apply(base, fused, fraction=fr, direction=direction)

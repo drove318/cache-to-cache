@@ -25,8 +25,8 @@ REGIMES = ("general", "mixed", "task")
 
 #: activation-ratio boundaries from the paper's discussion, rounded to a
 #: practical pair of thresholds (they are engineering choices, documented):
-BROAD_OPEN = 0.60      # ≥ 60 % of gates open  → general-purpose regime
-SPARSE_OPEN = 0.40     # ≤ 40 % of gates open  → task-specific regime
+BROAD_OPEN = 0.60  # ≥ 60 % of gates open  → general-purpose regime
+SPARSE_OPEN = 0.40  # ≤ 40 % of gates open  → task-specific regime
 
 
 @dataclass(frozen=True)
@@ -47,12 +47,16 @@ class GateReading:
     regime: str
 
     def __str__(self):
-        return (f"regime={self.regime:<7} open={self.ratio:0.2f} "
-                f"mean|g|={self.mean_weight:0.3f}")
+        return f"regime={self.regime:<7} open={self.ratio:0.2f} mean|g|={self.mean_weight:0.3f}"
 
 
-def classify_regime(ratio: float, mean_weight: float | None = None, *,
-                    broad: float = BROAD_OPEN, sparse: float = SPARSE_OPEN) -> GateReading:
+def classify_regime(
+    ratio: float,
+    mean_weight: float | None = None,
+    *,
+    broad: float = BROAD_OPEN,
+    sparse: float = SPARSE_OPEN,
+) -> GateReading:
     """Assign one of the three regimes to a (ratio, mean|weight|) reading.
 
     Classification first, directions second: a gate population that opens
@@ -75,6 +79,8 @@ def classify_regime(ratio: float, mean_weight: float | None = None, *,
         regime = "task"
     else:
         regime = "mixed"
-    return GateReading(ratio=float(ratio),
-                      mean_weight=(float(mean_weight) if mean_weight is not None else 0.0),
-                      regime=regime)
+    return GateReading(
+        ratio=float(ratio),
+        mean_weight=(float(mean_weight) if mean_weight is not None else 0.0),
+        regime=regime,
+    )

@@ -64,6 +64,7 @@ def pair_id(sharer: str | ModelSpec, receiver: str | ModelSpec) -> str:
     folded to a single dash — case is preserved for legibility, ids are
     compared case-sensibly.
     """
+
     def norm(item):
         s = item if isinstance(item, str) else item.id
         s = s.strip().lower()
@@ -72,6 +73,7 @@ def pair_id(sharer: str | ModelSpec, receiver: str | ModelSpec) -> str:
         while "--" in collapsed:
             collapsed = collapsed.replace("--", "-")
         return collapsed.strip("-") or "unnamed"
+
     return f"{norm(sharer)}__{norm(receiver)}"
 
 
@@ -90,8 +92,14 @@ class ZooClient:
         ``$C2C_HF_TOKEN`` when unset).
     """
 
-    def __init__(self, *, root: str | None = None, hub: str | None = DEFAULT_HUB,
-                 token: str | None = None, timeout: float = 30.0):
+    def __init__(
+        self,
+        *,
+        root: str | None = None,
+        hub: str | None = DEFAULT_HUB,
+        token: str | None = None,
+        timeout: float = 30.0,
+    ):
         self.root = os.path.abspath(os.path.expanduser(root or DEFAULT_ZOO_ROOT))
         self.hub = hub
         self.token = token if token is not None else os.environ.get("C2C_HF_TOKEN")
@@ -99,7 +107,7 @@ class ZooClient:
 
     # -- local resolution, first and foremost ───────────────────────────────
     def _pair_dir(self, pair: str) -> str:
-        safe = os.path.basename(pair)          # containment: never traverse
+        safe = os.path.basename(pair)  # containment: never traverse
         if safe != pair or not safe:
             msg = f"illegal pair id: {pair!r}"
             raise ValueError(msg)
@@ -126,8 +134,9 @@ class ZooClient:
             raise ValueError(msg)
         pid = pair if "__" in pair else pair_id(pair, pair)
         directory = self._pair_dir(pid)
-        if os.path.isfile(os.path.join(directory, WEIGHTS_NAME)) and \
-           os.path.isfile(os.path.join(directory, MANIFEST_NAME)):
+        if os.path.isfile(os.path.join(directory, WEIGHTS_NAME)) and os.path.isfile(
+            os.path.join(directory, MANIFEST_NAME)
+        ):
             return directory
         return None
 
@@ -153,8 +162,15 @@ class ZooClient:
             raise ValueError(msg)
 
     # -- publishing ─────────────────────────────────────────────────────────
-    def publish(self, *, sharer: str | ModelSpec, receiver: str | ModelSpec,
-                fuser, config: Any = None, revision: str = "main") -> dict:
+    def publish(
+        self,
+        *,
+        sharer: str | ModelSpec,
+        receiver: str | ModelSpec,
+        fuser,
+        config: Any = None,
+        revision: str = "main",
+    ) -> dict:
         """Save a trained fuser into the local zoo (and upload when online).
 
         The fuser must expose ``state_dict()`` (any :class:`torch.nn.Module`).
@@ -168,7 +184,7 @@ class ZooClient:
         os.close(tmp_fd)
         try:
             torch.save({"format": FORMAT_MAGIC, "state_dict": fuser.state_dict()}, tmp_name)
-            os.replace(tmp_name, weights_path)               # atomic on POSIX
+            os.replace(tmp_name, weights_path)  # atomic on POSIX
         finally:
             if os.path.exists(tmp_name):
                 os.remove(tmp_name)
@@ -180,7 +196,7 @@ class ZooClient:
             "revision": revision,
             "created_at": datetime.now(timezone.utc).isoformat(sep="T"),
             "config": _plain(config),
-            "sha256": _sha256(weights_path),              # the seal, on the shelf
+            "sha256": _sha256(weights_path),  # the seal, on the shelf
         }
         with open(os.path.join(directory, MANIFEST_NAME), "w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2, sort_keys=True)
@@ -188,12 +204,18 @@ class ZooClient:
             try:
                 self._upload(directory, pid)
             except (urllib.error.URLError, OSError) as exc:
-                manifest["upload"] = f"skipped: {exc}"      # offline-first: local stands
+                manifest["upload"] = f"skipped: {exc}"  # offline-first: local stands
         return manifest
 
     # -- fetching ───────────────────────────────────────────────────────────
-    def fetch(self, *, sharer: str | ModelSpec, receiver: str | ModelSpec,
-             revision: str = "main", force: bool = False) -> str:
+    def fetch(
+        self,
+        *,
+        sharer: str | ModelSpec,
+        receiver: str | ModelSpec,
+        revision: str = "main",
+        force: bool = False,
+    ) -> str:
         """Return the local directory of a pair, downloading it if need be.
 
         Resolution order: local cache → hub. The checksum recorded in the
@@ -205,7 +227,7 @@ class ZooClient:
         if not force:
             found = self.local_path(pid)
             if found:
-                self._verify_local(pid, found)            # verify, before returning
+                self._verify_local(pid, found)  # verify, before returning
                 return found
         if not self.hub:
             msg = f"pair {pid!r} not in the local zoo and the client is offline"
@@ -232,8 +254,14 @@ class ZooClient:
             json.dump(manifest, fh, indent=2, sort_keys=True)
         return directory
 
-    def load_fuser(self, *, sharer: str | ModelSpec, receiver: str | ModelSpec,
-                   fuser_builder, strict: bool = True):
+    def load_fuser(
+        self,
+        *,
+        sharer: str | ModelSpec,
+        receiver: str | ModelSpec,
+        fuser_builder,
+        strict: bool = True,
+    ):
         """Fetch a pair's weights and re-instantiate a fuser from them.
 
         ``fuser_builder`` is a zero-argument callable returning a
@@ -241,8 +269,9 @@ class ZooClient:
         a lambda around :class:`c2c.fuser.Fuser`).
         """
         directory = self.fetch(sharer=sharer, receiver=receiver)
-        blob = torch.load(os.path.join(directory, WEIGHTS_NAME),
-                        map_location="cpu", weights_only=True)
+        blob = torch.load(
+            os.path.join(directory, WEIGHTS_NAME), map_location="cpu", weights_only=True
+        )
         if blob.get("format") != FORMAT_MAGIC:
             msg = f"{directory}: not a c2c fuser checkpoint (missing magic)"
             raise ValueError(msg)
@@ -267,8 +296,10 @@ class ZooClient:
             return json.loads(resp.read().decode("utf-8"))
 
     def _download(self, url: str, destination: str) -> None:
-        with urllib.request.urlopen(self._request(url), timeout=self.timeout) as resp, \
-             open(destination, "wb") as out:
+        with (
+            urllib.request.urlopen(self._request(url), timeout=self.timeout) as resp,
+            open(destination, "wb") as out,
+        ):
             shutil.copyfileobj(resp, out)
 
     def _upload(self, directory: str, pid: str) -> None:

@@ -15,7 +15,10 @@ from .gates import GateReading, classify_regime
 from .rank import effective_rank, rank_report
 
 __all__ = [
-    "effective_rank", "rank_report",
-    "GateReading", "classify_regime",
-    "FailureProbe", "StructuredLog",
+    "effective_rank",
+    "rank_report",
+    "GateReading",
+    "classify_regime",
+    "FailureProbe",
+    "StructuredLog",
 ]

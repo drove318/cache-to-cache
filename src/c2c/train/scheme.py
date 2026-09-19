@@ -117,8 +117,11 @@ def load_jsonl_dataset(path: str, *, limit: int | None = None) -> Iterator[Sampl
             except json.JSONDecodeError as exc:
                 msg = f"{path}:{lineno}: malformed JSON-L record: {exc.msg}"
                 raise ValueError(msg) from exc
-            context = row.get("context") or row.get("prompt") or \
-                (str(row.get("instruction", "")) + " " + str(row.get("input", ""))).strip()
+            context = (
+                row.get("context")
+                or row.get("prompt")
+                or (str(row.get("instruction", "")) + " " + str(row.get("input", ""))).strip()
+            )
             response = row.get("response") or row.get("output") or ""
             if not context or not response:
                 continue
@@ -151,8 +154,10 @@ class TrainingResult:
     grad_norms: list[float] = field(default_factory=list)
 
     def __str__(self):
-        head = (f"steps={self.steps} epochs={self.epochs} "
-                f"final_loss={self.final_loss:0.4f} gpu_hours={self.gpu_hours:0.2f}")
+        head = (
+            f"steps={self.steps} epochs={self.epochs} "
+            f"final_loss={self.final_loss:0.4f} gpu_hours={self.gpu_hours:0.2f}"
+        )
         if self.converged_train_at is not None:
             head += f" converged_at={self.converged_train_at}"
         return head
@@ -173,6 +178,7 @@ def load_checkpoint_blob(path: str):
     from enum import Enum
 
     from .. import types as _types
+
     with open(path, "rb") as fh:
         magic = fh.read(4)
     if magic != b"PK\x03\x04":
@@ -180,8 +186,9 @@ def load_checkpoint_blob(path: str):
         import struct
 
         from safetensors.torch import load_file
+
         tensors = load_file(path)
-        with open(path, "rb") as fh:                    # the header: u64 length, then json
+        with open(path, "rb") as fh:  # the header: u64 length, then json
             (head_len,) = struct.unpack("<Q", fh.read(8))
             header = json.loads(fh.read(head_len).decode("utf-8"))
         meta = header.get("__metadata__") or {}
@@ -190,17 +197,22 @@ def load_checkpoint_blob(path: str):
             raise ValueError(msg)
         blob = json.loads(meta.get("c2c-json") or "{}")
         blob["format"] = meta["c2c-format"]
-        blob["state_dict"] = {k[len("state."):]: v for k, v in tensors.items()
-                              if k.startswith("state.")}
+        blob["state_dict"] = {
+            k[len("state.") :]: v for k, v in tensors.items() if k.startswith("state.")
+        }
         geometry = blob.get("geometry") or {}
         for side in ("receiver", "sharer"):
             kind = geometry.get(side, {}).get("attention_kind")
             if isinstance(kind, int) and not isinstance(kind, _types.AttentionKind):
                 geometry[side]["attention_kind"] = _types.AttentionKind(kind)
         return blob
-    mine = [value for _name, value in vars(_types).items()
-            if isinstance(value, type) and issubclass(value, Enum)
-            and value.__module__ == _types.__name__]
+    mine = [
+        value
+        for _name, value in vars(_types).items()
+        if isinstance(value, type)
+        and issubclass(value, Enum)
+        and value.__module__ == _types.__name__
+    ]
     with torch.serialization.safe_globals(mine):
         return torch.load(path, map_location="cpu", weights_only=True)
 
@@ -227,9 +239,18 @@ class Trainer:
         The published defaults (App. A.3.5); pass a modified copy to tune.
     """
 
-    def __init__(self, fuser: Fuser, provider_r: CacheProvider, provider_s: CacheProvider,
-                 injector: CacheInjector, *, receiver_tokenizer, sharer_tokenizer,
-                 recipe: TrainRecipe | None = None, device: str | None = None):
+    def __init__(
+        self,
+        fuser: Fuser,
+        provider_r: CacheProvider,
+        provider_s: CacheProvider,
+        injector: CacheInjector,
+        *,
+        receiver_tokenizer,
+        sharer_tokenizer,
+        recipe: TrainRecipe | None = None,
+        device: str | None = None,
+    ):
         self.fuser = fuser
         self.provider_r = provider_r
         self.provider_s = provider_s
@@ -282,12 +303,18 @@ class Trainer:
         #     row, the sharer row that covers the same span of the context
         if len(ctx_r_ids) != len(ctx_s_ids):
             from ..align.tokens import TokenAligner  # heavy import deferred
+
             aligner = TokenAligner(self.receiver_tokenizer, self.sharer_tokenizer)
             token_mapping = aligner.select_rows(ctx_r_ids)
         else:
             token_mapping = None
-        fused = self.fuser(recv_cache, shr_cache, token_mapping=token_mapping,
-                          step=self._step, total_steps=self.total_steps)
+        fused = self.fuser(
+            recv_cache,
+            shr_cache,
+            token_mapping=token_mapping,
+            step=self._step,
+            total_steps=self.total_steps,
+        )
 
         # (3) supervision on the receiver's side
         self.injector.install(fused, None)
@@ -298,7 +325,7 @@ class Trainer:
                 "use an adapter that honours the interface (reference, HF, vLLM)"
             )
             raise TypeError(msg)
-        logits = score(y_r_ids)                              # [T, vocab], row t predicts t+1
+        logits = score(y_r_ids)  # [T, vocab], row t predicts t+1
         if len(y_r_ids) < 2:
             msg = "response needs at least two tokens for next-token supervision"
             raise ValueError(msg)
@@ -307,8 +334,14 @@ class Trainer:
         return loss
 
     # -- the loop ───────────────────────────────────────────────────────────
-    def fit(self, dataset: Sequence[Sample] | Iterator[Sample], *,
-            epochs: int | None = None, on_step=None, target_loss: float = 2.0) -> TrainingResult:
+    def fit(
+        self,
+        dataset: Sequence[Sample] | Iterator[Sample],
+        *,
+        epochs: int | None = None,
+        on_step=None,
+        target_loss: float = 2.0,
+    ) -> TrainingResult:
         """Train the fuser; the two LLMs do not learn a thing."""
         epochs = epochs or self.recipe.epochs
         result = TrainingResult()
@@ -343,7 +376,7 @@ class Trainer:
                     break
             if stop:
                 break
-        result.steps = step                                    # the ledger, kept
+        result.steps = step  # the ledger, kept
         result.final_loss = result.loss_curve[-1] if result.loss_curve else float("nan")
         result.gpu_hours = (time.monotonic() - self._t0) / 3600.0
         return result
@@ -358,9 +391,9 @@ class Trainer:
             "state_dict": self.fuser.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "recipe": asdict(self.recipe),
-            "geometry": {                                      # the nets, described wholly
-                "receiver": asdict(self.fuser.receiver),      # so the served can rebuild
-                "sharer": asdict(self.fuser.sharer),          # the trained fuser alone
+            "geometry": {  # the nets, described wholly
+                "receiver": asdict(self.fuser.receiver),  # so the served can rebuild
+                "sharer": asdict(self.fuser.sharer),  # the trained fuser alone
                 "mapping": list(self.fuser.mapping),
                 "fuser_config": asdict(self.fuser.fuser_config),
                 "gate_config": asdict(self.fuser.gate_config),
@@ -373,13 +406,19 @@ class Trainer:
             import json
 
             from safetensors.torch import save_file
+
             save_file(
-                {f"state.{k}": v.detach().cpu().contiguous()
-                 for k, v in blob["state_dict"].items()},
+                {
+                    f"state.{k}": v.detach().cpu().contiguous()
+                    for k, v in blob["state_dict"].items()
+                },
                 path,
-                metadata={"c2c-format": blob["format"],
-                          "c2c-json": json.dumps({"recipe": blob["recipe"],
-                                                 "geometry": blob["geometry"]})},
+                metadata={
+                    "c2c-format": blob["format"],
+                    "c2c-json": json.dumps(
+                        {"recipe": blob["recipe"], "geometry": blob["geometry"]}
+                    ),
+                },
             )
         else:
             torch.save(blob, path)
@@ -395,7 +434,7 @@ class Trainer:
             try:
                 self.optimizer.load_state_dict(blob["optimizer"])
             except (ValueError, KeyError):
-                pass                                   # optimizer state is advisory
+                pass  # optimizer state is advisory
         return blob.get("recipe", {})
 
     # -- evaluation ─────────────────────────────────────────────────────────

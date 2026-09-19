@@ -36,7 +36,7 @@ def _rows(slice_: LayerSlice) -> Tensor:
     joint view is taken here, and every slice of the result is returned to
     the cache on the way out.
     """
-    if slice_.key.dim() == 3:                       # heads view → flatten
+    if slice_.key.dim() == 3:  # heads view → flatten
         k = slice_.key.flatten(start_dim=1)
         v = slice_.value.flatten(start_dim=1)
     else:
@@ -79,17 +79,22 @@ class FuserPair(nn.Module):
     through the same pair module, in parallel, sharing the gate value.
     """
 
-    def __init__(self, receiver: LayerGeometry, sharer: LayerGeometry,
-                 config: FuserConfig | None = None):
+    def __init__(
+        self, receiver: LayerGeometry, sharer: LayerGeometry, config: FuserConfig | None = None
+    ):
         super().__init__()
         self.receiver = receiver
         self.sharer = sharer
         self.config = config or FuserConfig()
-        d_r = receiver.d                      # joint dimension of one token
+        d_r = receiver.d  # joint dimension of one token
         d_s = sharer.d
         self.pre = (
-            PreProjection(d_s, d_r, layers=self.config.pre_projection_layers,
-                          activation=self.config.activation)
+            PreProjection(
+                d_s,
+                d_r,
+                layers=self.config.pre_projection_layers,
+                activation=self.config.activation,
+            )
             if self.config.variant == "c2c-c"
             else None
         )
@@ -103,8 +108,7 @@ class FuserPair(nn.Module):
             raise ValueError(msg)
         self.kv_heads = receiver.num_key_value_heads
         self.head_size = receiver.head_size
-        self.projection = Projection(d_r, d_s_eff, d_model=d_r,
-                                     activation=self.config.activation)
+        self.projection = Projection(d_r, d_s_eff, d_model=d_r, activation=self.config.activation)
         self.weighting = DynamicWeighting(self.kv_heads, self.head_size, halves=2)
         self.out_features = self.projection.projection.out_features
 
@@ -113,10 +117,10 @@ class FuserPair(nn.Module):
         if self.pre is not None:
             s_rows = self.pre(s_rows)
         x = torch.cat((r_rows, s_rows), dim=-1)
-        delta = self.projection(x)                          # [n, d_r] = [key ‖ value]
+        delta = self.projection(x)  # [n, d_r] = [key ‖ value]
         n = delta.shape[0]
         halves_view = delta.reshape(n, 2, self.kv_heads, self.head_size)
-        modulated = self.weighting(halves_view)             # input-aware head modulation
+        modulated = self.weighting(halves_view)  # input-aware head modulation
         return modulated.reshape(n, -1)
 
 
@@ -140,11 +144,16 @@ class Fuser(nn.Module):
         ordering floor < fuse < gate in `c2c.eval` fails review.
     """
 
-    def __init__(self, receiver: LayerGeometry, sharer: LayerGeometry,
-                 mapping: Sequence[int], *,
-                 fuser_config: FuserConfig | None = None,
-                 gate_config: GateConfig | None = None,
-                 blend_config: BlendConfig | None = None):
+    def __init__(
+        self,
+        receiver: LayerGeometry,
+        sharer: LayerGeometry,
+        mapping: Sequence[int],
+        *,
+        fuser_config: FuserConfig | None = None,
+        gate_config: GateConfig | None = None,
+        blend_config: BlendConfig | None = None,
+    ):
         super().__init__()
         self.receiver = receiver
         self.sharer = sharer
@@ -170,9 +179,15 @@ class Fuser(nn.Module):
         )
 
     # -- the fuse pipeline proper ───────────────────────────────────────────
-    def forward(self, receiver_cache: LayeredCache, sharer_cache: LayeredCache,
-                *, token_mapping: Sequence[int] | None = None,
-                step: int | None = None, total_steps: int | None = None) -> LayeredCache:
+    def forward(
+        self,
+        receiver_cache: LayeredCache,
+        sharer_cache: LayeredCache,
+        *,
+        token_mapping: Sequence[int] | None = None,
+        step: int | None = None,
+        total_steps: int | None = None,
+    ) -> LayeredCache:
         """Fuse both caches into one (Eq. 3). Returns a *new* LayeredCache.
 
         ``token_mapping``: aligned sharer row index per receiver row, as
@@ -180,12 +195,16 @@ class Fuser(nn.Module):
         both models agree on the tokenisation (identity alignment).
         """
         if len(receiver_cache) < len(self.mapping):
-            msg = (f"receiver cache has {len(receiver_cache)} layers, "
-                   f"mapping expects {len(self.mapping)}")
+            msg = (
+                f"receiver cache has {len(receiver_cache)} layers, "
+                f"mapping expects {len(self.mapping)}"
+            )
             raise ValueError(msg)
         if len(sharer_cache) <= max(self.mapping):
-            msg = (f"sharer cache has {len(sharer_cache)} layers, "
-                   f"mapping indexes layer {max(self.mapping)}")
+            msg = (
+                f"sharer cache has {len(sharer_cache)} layers, "
+                f"mapping indexes layer {max(self.mapping)}"
+            )
             raise IndexError(msg)
         if self.fuser_config.gating:
             weights = self.gate(training=self.training, step=step, total_steps=total_steps)
@@ -208,22 +227,24 @@ class Fuser(nn.Module):
             w = weights[n].to(delta.dtype) if weights.dim() else weights
             contribution = delta * w
             if self.fuser_config.residual:
-                rows = r_rows + contribution            # Eq. (3): residual, never destructive
+                rows = r_rows + contribution  # Eq. (3): residual, never destructive
             else:
-                rows = contribution                        # Table 8 floor: projection only
+                rows = contribution  # Table 8 floor: projection only
             fused_slices.append(_slice(rows, self.receiver))
         fused = LayeredCache(fused_slices)
-        if self.blend_config.fraction < 1.0:             # App. A.2.4 progressive blend
+        if self.blend_config.fraction < 1.0:  # App. A.2.4 progressive blend
             fused = apply_blend(
-                receiver_cache, fused,
+                receiver_cache,
+                fused,
                 fraction=self.blend_config.fraction,
                 direction=BlendDirection(self.blend_config.direction),
             )
         return fused
 
     # -- reports ────────────────────────────────────────────────────────────
-    def report(self, *, num_tokens: int = 0,
-                effective_rank: dict[str, dict[str, float]] | None = None) -> FusionReport:
+    def report(
+        self, *, num_tokens: int = 0, effective_rank: dict[str, dict[str, float]] | None = None
+    ) -> FusionReport:
         """Summarise the last fusion for `c2c fuse --report` (FR-17 inputs)."""
         probs = self.gate.probabilities()
         return FusionReport(

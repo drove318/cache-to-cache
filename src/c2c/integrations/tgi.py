@@ -32,8 +32,10 @@ class TGIAdapter(EngineAdapter):
 
     engine_name = "TGI"
     required_extra = None
-    DEGRADATION = ("TGI's wire protocol carries no cache: prefill-only capture; "
-                   "fusion reduced to the receiver's own cache")
+    DEGRADATION = (
+        "TGI's wire protocol carries no cache: prefill-only capture; "
+        "fusion reduced to the receiver's own cache"
+    )
 
     def __init__(self, model_id: str, **options):
         super().__init__(model_id, **options)
@@ -44,14 +46,17 @@ class TGIAdapter(EngineAdapter):
         request = urllib.request.Request(
             self.base_url + path,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},   # application/json, as per RFC
-            method="POST")
+            headers={"Content-Type": "application/json"},  # application/json, as per RFC
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, OSError) as exc:
-            raise AdapterNotSupported(f"TGI server at {self.base_url} unreachable",
-                                    hint="start it, or point --base-url at it") from exc
+            raise AdapterNotSupported(
+                f"TGI server at {self.base_url} unreachable",
+                hint="start it, or point --base-url at it",
+            ) from exc
 
     def _build_spec(self) -> ModelSpec:
         self._post("/info", {})  # liveness probe: unreachable raises AdapterNotSupported
@@ -59,19 +64,26 @@ class TGIAdapter(EngineAdapter):
             id=self.model_id,
             geometry=self.options.get("geometry") or _unknown_geometry(),
             family="tgi",
-            instruction_tuned=bool(self.options.get("instruction_tuned", True)))
+            instruction_tuned=bool(self.options.get("instruction_tuned", True)),
+        )
 
     def capture(self, prompt_tokens):
         self._degraded = True
-        return LayeredCache([])                            # documented degradation
+        return LayeredCache([])  # documented degradation
 
     def install(self, cache, prompt_tokens=None):
         self._pending = None
 
-    def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
-                 tools=None, stop=None):
-        params = {"max_new_tokens": int(max_new_tokens), "decoder_input_ids":
-                  list(prompt_tokens)}
+    def generate(
+        self,
+        prompt_tokens,
+        *,
+        max_new_tokens: int = 64,
+        temperature: float = 0.0,
+        tools=None,
+        stop=None,
+    ):
+        params = {"max_new_tokens": int(max_new_tokens), "decoder_input_ids": list(prompt_tokens)}
         if temperature and temperature > 0.0:
             params["temperature"] = float(temperature)
         if stop:
@@ -93,4 +105,5 @@ class TGIAdapter(EngineAdapter):
 
 def _unknown_geometry():
     from ..types import LayerGeometry
+
     return LayerGeometry(layers=1, hidden_size=1, num_heads=1)

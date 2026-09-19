@@ -28,7 +28,7 @@ __all__ = ["MAN_TOPICS", "page", "render"]
 MAN_TOPICS: dict[str, str] = {
     "c2c": "c2c.1",
     "commands": "c2c.1",
-    "config": "__constant__",          # served from c2c.config.MAN_C2C_CONFIG
+    "config": "__constant__",  # served from c2c.config.MAN_C2C_CONFIG
     "fuser": "c2c-fuser.5",
     "engines": "c2c-engines.7",
     "zoo": "c2c-zoo.5",
@@ -57,10 +57,10 @@ def _normalise(topic: str) -> str:
     key = (topic or "").strip().lower()
     for noise in ("man ", "c2c-", "c2c.", "c2c "):
         if key.startswith(noise):
-            key = key[len(noise):]
+            key = key[len(noise) :]
     for noise in (".1", ".5", ".7"):
         if key.endswith(noise):
-            key = key[:-len(noise)]
+            key = key[: -len(noise)]
     key = key.strip()
     if key in ("", "intro", "overview"):
         key = "c2c"
@@ -80,6 +80,7 @@ def page(topic: str) -> str | None:
         return None
     if filename == "__constant__":
         from .. import config as _config
+
         return _config.MAN_C2C_CONFIG
     base = _man_dir()
     if base is None:
@@ -104,8 +105,9 @@ def render(topic: str | None) -> tuple[str, bool]:
     return f"No manual entry for {(topic or '').strip()!r}.\n{index}", False
 
 
-if __name__ == "__main__":                      # python -m c2c.utils.man [TOPIC]
+if __name__ == "__main__":  # python -m c2c.utils.man [TOPIC]
     import sys
+
     body, ok = render(sys.argv[1] if len(sys.argv) > 1 else None)
     print(body)
     raise SystemExit(0 if ok else 1)

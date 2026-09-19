@@ -7,6 +7,7 @@ Names of config fields are LEARNED from the live object, never typed, and
 assertions speak in values, not spellings: a display layer that mangles one
 glyph into another must not be able to fake a green.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,13 +24,20 @@ tf = pytest.importorskip("transformers", reason="the hf engine is an extra")
 
 _PROBE = tf.Qwen2Config()
 
+
 def _learn(pred):
-    hits = [a for a in dir(_PROBE) if not a.startswith("_")
-            and isinstance(getattr(_PROBE, a, None), int)
-            and not isinstance(getattr(_PROBE, a), bool)
-            and getattr(_PROBE, a, 0) > 0 and pred(a)]
+    hits = [
+        a
+        for a in dir(_PROBE)
+        if not a.startswith("_")
+        and isinstance(getattr(_PROBE, a, None), int)
+        and not isinstance(getattr(_PROBE, a), bool)
+        and getattr(_PROBE, a, 0) > 0
+        and pred(a)
+    ]
     assert len(hits) == 1, f"probe ambiguous: {hits}"
     return hits[0]
+
 
 A_HIDDEN = _learn(lambda a: a.startswith("hidden") and a.endswith("_size"))
 A_HEADS = _learn(lambda a: a.endswith("_heads") and "attention" in a and "key" not in a)
@@ -38,8 +46,23 @@ A_LAYERS = _learn(lambda a: a.startswith("num") and a.endswith("_layers"))
 A_VOCAB = _learn(lambda a: a.startswith("vocab") and a.endswith("_size"))
 A_CTX = _learn(lambda a: "position" in a and a.endswith("_embeddings"))
 
-WORDS = ["[PAD]", "[UNK]", "[SEP]", "[CLS]", "[MASK]",
-         "hello", "two", "plus", "four", "the", "answer", "is", "what", "please", "and"]
+WORDS = [
+    "[PAD]",
+    "[UNK]",
+    "[SEP]",
+    "[CLS]",
+    "[MASK]",
+    "hello",
+    "two",
+    "plus",
+    "four",
+    "the",
+    "answer",
+    "is",
+    "what",
+    "please",
+    "and",
+]
 DIMS = {A_HIDDEN: 24, A_HEADS: 4, A_KV: 2, A_LAYERS: 3, A_VOCAB: len(WORDS) + 2, A_CTX: 64}
 
 NATIVE_TOKENIZER_SOURCE = f'''"""Naive word tokenizer carried by the synthetic folder itself."""
@@ -79,19 +102,27 @@ class NaiveWordTokenizer:
         return {{"input_ids": ids, "attention_mask": [1] * len(ids)}}
 '''
 
-exec(NATIVE_TOKENIZER_SOURCE, globals())      # NaiveWordTokenizer, defined once, used everywhere
+exec(NATIVE_TOKENIZER_SOURCE, globals())  # NaiveWordTokenizer, defined once, used everywhere
 
 
 def _build_one(root, name):
     import torch
+
     folder = os.path.join(str(root), name)
     os.makedirs(folder, exist_ok=True)
     cfg = tf.Qwen2Config()
     for attr, value in DIMS.items():
         setattr(cfg, attr, value)
-    seq_attr = next((a for a in dir(cfg) if not a.startswith("_")
-                     and a.endswith("_types") and isinstance(getattr(cfg, a, None), list)),
-                    None)
+    seq_attr = next(
+        (
+            a
+            for a in dir(cfg)
+            if not a.startswith("_")
+            and a.endswith("_types")
+            and isinstance(getattr(cfg, a, None), list)
+        ),
+        None,
+    )
     if seq_attr:
         seq = getattr(cfg, seq_attr)
         setattr(cfg, seq_attr, [seq[0]] * DIMS[A_LAYERS])
@@ -119,9 +150,11 @@ def hf_pair(tmp_path_factory):
     root = str(tmp_path_factory.mktemp("c2c-hf"))
     return _build_one(root, "receiver"), _build_one(root, "sharer")
 
+
 @pytest.fixture(scope="session")
 def adapters(hf_pair):
     from c2c.integrations.hf import HFAdapter
+
     return HFAdapter(hf_pair[0]), HFAdapter(hf_pair[1])
 
 
@@ -154,25 +187,30 @@ def _mount_naive_guide():
 
 
 def _geometry_values(geometry):
-    return {getattr(geometry, a) for a in dir(geometry)
-            if not a.startswith("_") and isinstance(getattr(geometry, a), int)
-            and not isinstance(getattr(geometry, a), bool)}
+    return {
+        getattr(geometry, a)
+        for a in dir(geometry)
+        if not a.startswith("_")
+        and isinstance(getattr(geometry, a), int)
+        and not isinstance(getattr(geometry, a), bool)
+    }
 
 
 class TestAdapterOnASyntheticCard:
     def test_geometry_is_the_cards_word(self, adapters):
         vals = _geometry_values(adapters[0].spec().geometry)
-        for claimed in (3, 24, 4, 2):                      # layers, hidden, heads, kv
+        for claimed in (3, 24, 4, 2):  # layers, hidden, heads, kv
             assert claimed in vals, f"the card said {claimed}; the adapter heard otherwise"
 
     def test_capture_walks_the_cache(self, adapters):
         cache = adapters[0].capture([2, 3, 4, 5])
-        assert len(cache) == 3                              # the card's layer count
+        assert len(cache) == 3  # the card's layer count
         rows = tuple(cache[0].key.shape)
-        assert rows == (4, 2, 6)                           # tokens, kv heads, head dim
+        assert rows == (4, 2, 6)  # tokens, kv heads, head dim
 
     def test_report_context_never_touches_weights(self, hf_pair):
         from c2c.integrations.hf import HFAdapter
+
         assert HFAdapter.report_context(hf_pair[0]) == 64  # the card's own claim
 
     def test_install_then_generate_speaks(self, adapters):
@@ -192,6 +230,7 @@ class TestServedRealFormatModel:
         from c2c.integrations.hf import HFAdapter
         from c2c.serve.openai_proxy import create_server
         from c2c.serve.registry import ModelHub
+
         recv, shar = (HFAdapter(hf_pair[0]), HFAdapter(hf_pair[1]))
         fuse = Fuser(recv.spec().geometry, shar.spec().geometry, [0, 1, 2])
         fuse.eval()
@@ -224,11 +263,18 @@ class TestServedRealFormatModel:
         try:
             gallery = self._get(base, "/v1/models")
             pair = next(m for m in gallery["data"] if "share" in m.get("description", ""))
-            body = json.dumps({"model": pair["id"],
-                              "messages": [{"role": "user", "content": "hello two"}],
-                              "max_tokens": 4}).encode("utf-8")
-            request = urllib.request.Request(base + "/v1/chat/completions", data=body,
-                headers={"Content-Type": "application/json"})
+            body = json.dumps(
+                {
+                    "model": pair["id"],
+                    "messages": [{"role": "user", "content": "hello two"}],
+                    "max_tokens": 4,
+                }
+            ).encode("utf-8")
+            request = urllib.request.Request(
+                base + "/v1/chat/completions",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
             with urllib.request.urlopen(request, timeout=60) as response:
                 answer = json.load(response)
             assert answer["used_cache"] is True
@@ -255,9 +301,28 @@ class TestTrainOnRealFormatModels:
                 f"sys.exit(main())\n"
             )
         env = dict(os.environ, CUDA_VISIBLE_DEVICES="")
-        finished = subprocess.run([sys.executable, runner, "train",
-                                   "-d", dataset, "--receiver", hf_pair[0], "--sharer", hf_pair[1],
-                                   "-e", "hf", "--epochs", "1", "-o", out],
-                                  capture_output=True, text=True, timeout=300, env=env)
+        finished = subprocess.run(
+            [
+                sys.executable,
+                runner,
+                "train",
+                "-d",
+                dataset,
+                "--receiver",
+                hf_pair[0],
+                "--sharer",
+                hf_pair[1],
+                "-e",
+                "hf",
+                "--epochs",
+                "1",
+                "-o",
+                out,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
+        )
         assert finished.returncode == 0, (finished.stdout + finished.stderr)[-1200:]
         assert os.path.isfile(out) and os.path.getsize(out) > 1000

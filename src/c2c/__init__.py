@@ -29,18 +29,40 @@ __version__ = "1.0.0"
 
 __all__ = [
     # data model
-    "LayerGeometry", "LayerSlice", "LayeredCache", "ModelSpec", "AttentionKind",
-    "BlendDirection", "FusionReport", "CacheProvider", "CacheInjector",
+    "LayerGeometry",
+    "LayerSlice",
+    "LayeredCache",
+    "ModelSpec",
+    "AttentionKind",
+    "BlendDirection",
+    "FusionReport",
+    "CacheProvider",
+    "CacheInjector",
     # fuser
-    "Fuser", "FuserPair", "Projection", "DynamicWeighting", "Gate",
-    "PreProjection", "FUSER_VARIANTS",
+    "Fuser",
+    "FuserPair",
+    "Projection",
+    "DynamicWeighting",
+    "Gate",
+    "PreProjection",
+    "FUSER_VARIANTS",
     # alignment
-    "TokenAligner", "terminal_mapping", "depth_normalized_mapping",
+    "TokenAligner",
+    "terminal_mapping",
+    "depth_normalized_mapping",
     # training & evaluation
-    "TrainRecipe", "Trainer", "C2CConfig", "FuserConfig", "GateConfig",
-    "BlendConfig", "AlignConfig", "load_config",
+    "TrainRecipe",
+    "Trainer",
+    "C2CConfig",
+    "FuserConfig",
+    "GateConfig",
+    "BlendConfig",
+    "AlignConfig",
+    "load_config",
     # diagnostics & zoo
-    "effective_rank", "gate_regimes", "UnifiedLatentSpace",
+    "effective_rank",
+    "gate_regimes",
+    "UnifiedLatentSpace",
 ]
 
 # The module's public surface, filled on first access (lazy, no torch pull).
@@ -83,12 +105,10 @@ def __getattr__(name: str):
         module_name, attr = _LAZY[name]
     except KeyError:
         msg = f"module {__name__!r} has no attribute {name!r}"
-        hint = (
-            "" if name.startswith("_")
-            else " (see c2c.__all__ or run `c2c man config`)"
-        )
+        hint = "" if name.startswith("_") else " (see c2c.__all__ or run `c2c man config`)"
         raise AttributeError(msg + hint) from None
     from importlib import import_module
+
     return getattr(import_module(module_name), attr)
 
 

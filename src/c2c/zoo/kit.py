@@ -52,12 +52,13 @@ class _LatentFuser(nn.Module):
     def __init__(self, receiver: LayerGeometry, latent_dim: int, cfg: FuserConfig):
         super().__init__()
         self.kv = receiver.kv_hidden_size
-        d_joint = 2 * self.kv                          # the receiver's own joint vector
+        d_joint = 2 * self.kv  # the receiver's own joint vector
         self.projection = nn.Linear(d_joint + latent_dim, d_joint)
         self.feature_fusion = nn.Linear(d_joint, d_joint)
         self.act = nn.GELU()
-        self.weighting = DynamicWeighting(receiver.num_key_value_heads,
-                                        receiver.head_size, halves=2)
+        self.weighting = DynamicWeighting(
+            receiver.num_key_value_heads, receiver.head_size, halves=2
+        )
         self.kvh = receiver.num_key_value_heads
         self.hs = receiver.head_size
 
@@ -65,12 +66,12 @@ class _LatentFuser(nn.Module):
         """Return the ``(delta_key, delta_value)`` half-vector contributions."""
         x = torch.cat((r_k, r_v, z), dim=-1)
         h = self.act(self.projection(x))
-        delta = self.feature_fusion(h)                       # [n, 2·kv]
+        delta = self.feature_fusion(h)  # [n, 2·kv]
         n, d = delta.shape[0], delta.shape[-1]
         heads_view = delta.reshape(n, 2, self.kvh, self.hs)
-        heads_view = self.weighting(heads_view)             # attention-head modulation
+        heads_view = self.weighting(heads_view)  # attention-head modulation
         delta = heads_view.reshape(n, d)
-        delta_k, delta_v = delta.split(self.kv, dim=-1)     # the halves, as per standard
+        delta_k, delta_v = delta.split(self.kv, dim=-1)  # the halves, as per standard
         return delta_k, delta_v
 
 
@@ -92,10 +93,16 @@ class UnifiedLatentSpace(nn.Module):
         dimension ``2·kv_hidden``.
     """
 
-    def __init__(self, sharers: Sequence[LayerGeometry], receiver: LayerGeometry,
-                 mapping: Sequence[int], *, latent_dim: int | None = None,
-                 fuser_config: FuserConfig | None = None,
-                 gate_config: GateConfig | None = None):
+    def __init__(
+        self,
+        sharers: Sequence[LayerGeometry],
+        receiver: LayerGeometry,
+        mapping: Sequence[int],
+        *,
+        latent_dim: int | None = None,
+        fuser_config: FuserConfig | None = None,
+        gate_config: GateConfig | None = None,
+    ):
         super().__init__()
         self.sharers = list(sharers)
         self.receiver = receiver
@@ -110,16 +117,24 @@ class UnifiedLatentSpace(nn.Module):
         fc = fuser_config or FuserConfig()
         gc = gate_config or GateConfig()
 
-        self.projectors = nn.ModuleList([
-            PreProjection(s.d, self.latent_dim,
-                         layers=fc.pre_projection_layers, activation=fc.activation)
-            for s in self.sharers
-        ])
-        self.fusers = nn.ModuleList([
-            _LatentFuser(receiver, self.latent_dim, fc) for _ in self.mapping
-        ])
-        self.gate = Gate(len(self.mapping), tau_max=gc.tau_max, tau_min=gc.tau_min,
-                       threshold=gc.threshold, straight_through=gc.straight_through)
+        self.projectors = nn.ModuleList(
+            [
+                PreProjection(
+                    s.d, self.latent_dim, layers=fc.pre_projection_layers, activation=fc.activation
+                )
+                for s in self.sharers
+            ]
+        )
+        self.fusers = nn.ModuleList(
+            [_LatentFuser(receiver, self.latent_dim, fc) for _ in self.mapping]
+        )
+        self.gate = Gate(
+            len(self.mapping),
+            tau_max=gc.tau_max,
+            tau_min=gc.tau_min,
+            threshold=gc.threshold,
+            straight_through=gc.straight_through,
+        )
         self.fuser_config = fc
         self._receiver_cache: LayeredCache | None = None
 
@@ -131,8 +146,10 @@ class UnifiedLatentSpace(nn.Module):
         the number of mapped receiver layers (N). The golden suite checks
         the slope of this growth.
         """
+
         def numel(module: nn.Module) -> int:
             return sum(p.numel() for p in module.parameters())
+
         projector_params = sum(numel(p) for p in self.projectors)
         fuser_params = sum(numel(f) for f in self.fusers) + numel(self.gate)
         return {
@@ -148,8 +165,9 @@ class UnifiedLatentSpace(nn.Module):
     def set_receiver_cache(self, cache: LayeredCache) -> None:
         """Install the receiver's own C(X); read by :meth:`fuse_many`."""
         if len(cache) != self.receiver.layers:
-            msg = (f"receiver cache has {len(cache)} layers, "
-                  f"geometry declares {self.receiver.layers}")
+            msg = (
+                f"receiver cache has {len(cache)} layers, geometry declares {self.receiver.layers}"
+            )
             raise ValueError(msg)
         self._receiver_cache = cache
 
@@ -161,20 +179,27 @@ class UnifiedLatentSpace(nn.Module):
         sharer's cache: ``z = P_s( C(X)_s )``, shape ``[n_tokens, latent_dim]``.
         """
         if not 0 <= sharer_index < len(self.sharers):
-            msg = (f"sharer index {sharer_index} out of range for "
-                  f"{len(self.sharers)} registered sharer(s)")
+            msg = (
+                f"sharer index {sharer_index} out of range for "
+                f"{len(self.sharers)} registered sharer(s)"
+            )
             raise IndexError(msg)
         projector = self.projectors[sharer_index]
         latents: list[torch.Tensor] = []
         for row in cache:
-            x = torch.cat((_flat(row.key), _flat(row.value)), dim=-1)   # the joint vector
+            x = torch.cat((_flat(row.key), _flat(row.value)), dim=-1)  # the joint vector
             latents.append(projector(x))
         return latents
 
     # -- the many-to-one fusion ─────────────────────────────────────────────
-    def fuse_many(self, caches: Sequence[LayeredCache], *,
-                 token_mappings: Sequence[Sequence[int] | None] | None = None,
-                 step: int | None = None, total_steps: int | None = None) -> LayeredCache:
+    def fuse_many(
+        self,
+        caches: Sequence[LayeredCache],
+        *,
+        token_mappings: Sequence[Sequence[int] | None] | None = None,
+        step: int | None = None,
+        total_steps: int | None = None,
+    ) -> LayeredCache:
         """Fuse all registered sharer caches into one receiver cache.
 
         ``caches[i]`` belongs to ``self.sharers[i]``. For every mapped
@@ -190,13 +215,14 @@ class UnifiedLatentSpace(nn.Module):
             msg = f"expected {len(self.sharers)} caches (one per sharer), got {len(caches)}"
             raise ValueError(msg)
         if self._receiver_cache is None:
-            msg = ("no receiver cache installed; call set_receiver_cache(C(X)) "
-                  "before fuse_many()")
+            msg = "no receiver cache installed; call set_receiver_cache(C(X)) before fuse_many()"
             raise LookupError(msg)
         for i, cache in enumerate(caches):
             if max(self.mapping) >= len(cache):
-                msg = (f"sharer {i} exposes {len(cache)} layers, but the mapping "
-                      f"indexes layer {max(self.mapping)}")
+                msg = (
+                    f"sharer {i} exposes {len(cache)} layers, but the mapping "
+                    f"indexes layer {max(self.mapping)}"
+                )
                 raise IndexError(msg)
         weights = self.gate(training=self.training, step=step, total_steps=total_steps)
         latents = [self.project(c, sharer_index=i) for i, c in enumerate(caches)]
@@ -223,11 +249,13 @@ class UnifiedLatentSpace(nn.Module):
                     idx = torch.as_tensor(rows, dtype=torch.long, device=z.device)
                     z = z.index_select(0, idx)
                 if z.shape[0] != r_k.shape[0]:
-                    msg = (f"sharer {i} latent has {z.shape[0]} rows, receiver has "
-                        f"{r_k.shape[0]}; pass token_mappings for this pair")
+                    msg = (
+                        f"sharer {i} latent has {z.shape[0]} rows, receiver has "
+                        f"{r_k.shape[0]}; pass token_mappings for this pair"
+                    )
                     raise ValueError(msg)
                 z_sum = z if z_sum is None else z_sum + z
-            z_bar = z_sum / len(latents)                          # the averaged latent
+            z_bar = z_sum / len(latents)  # the averaged latent
             delta_k, delta_v = self.fusers[n](r_k, r_v, z_bar)
             w = weights[n]
             out.append(LayerSlice(r_k + w * delta_k, r_v + w * delta_v))

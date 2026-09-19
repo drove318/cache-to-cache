@@ -40,9 +40,9 @@ from .registry import EngineAdapter
 __all__ = ["ReferenceConfig", "MiniatureTokenizer", "ReferenceEngine", "ReferenceAdapter"]
 
 PAD, UNK, BOS, EOS = 0, 1, 2, 3
-SPECIAL_TOKENS = ("[pad]", "[unk]", "bos", "eos")   # special tokens first, as usual
-_BASE = len(SPECIAL_TOKENS)                            # first piece-id after the specials
-_SPLIT_RE = re.compile(r"\S+|\s+")                    # words and the spaces between them
+SPECIAL_TOKENS = ("[pad]", "[unk]", "bos", "eos")  # special tokens first, as usual
+_BASE = len(SPECIAL_TOKENS)  # first piece-id after the specials
+_SPLIT_RE = re.compile(r"\S+|\s+")  # words and the spaces between them
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ class MiniatureTokenizer:
         if pid is not None:
             return pid
         if len(self._piece_to_id) >= self.max_pieces + _BASE:
-            return UNK                                    # vocabulary full: fall back to unk
+            return UNK  # vocabulary full: fall back to unk
         pid = self._next_id
         self._next_id += 1
         self._piece_to_id[piece] = pid
@@ -106,10 +106,10 @@ class MiniatureTokenizer:
         i = 0
         while i < len(word):
             if i + 1 < len(word):
-                pieces.append(word[i:i + 2])             # prefer a bigram, as usual
+                pieces.append(word[i : i + 2])  # prefer a bigram, as usual
                 i += 2
             else:
-                pieces.append(word[i])                   # the final odd character goes alone
+                pieces.append(word[i])  # the final odd character goes alone
                 i += 1
         return pieces
 
@@ -124,9 +124,9 @@ class MiniatureTokenizer:
         ids: list[int] = [BOS] if add_bos else []
         for run in _SPLIT_RE.findall(text or ""):
             if run in SPECIAL_TOKENS:
-                ids.append(self._piece_to_id[run])         # a special, whole, registered
+                ids.append(self._piece_to_id[run])  # a special, whole, registered
             elif run.isspace():
-                ids.append(self._add_piece(run))         # a space is a piece, too
+                ids.append(self._add_piece(run))  # a space is a piece, too
             else:
                 for piece in self._split_word(run):
                     ids.append(self._add_piece(piece))
@@ -217,17 +217,19 @@ class _CausalSelfAttention(nn.Module):
         t = k.shape[1]
         mask = torch.tril(torch.ones(t, t, dtype=torch.bool, device=x.device))
         attn = nn.functional.scaled_dot_product_attention(
-            q[None], k[None], v[None], attn_mask=mask[None, None], is_causal=False)
+            q[None], k[None], v[None], attn_mask=mask[None, None], is_causal=False
+        )
         out = attn[0].transpose(0, 1).reshape(t, self.hidden_size)
         return self.o(out), k, v
 
     def decode(self, x: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor):
         """``x``: [1, hidden]; caches [h, T_prev, hs] → (out, k, v) extended."""
-        q = self._heads(self.q(x))                          # [h, 1, hs]
+        q = self._heads(self.q(x))  # [h, 1, hs]
         k = torch.cat((k_cache, self._heads(self.k(x))), dim=1)
         v = torch.cat((v_cache, self._heads(self.v(x))), dim=1)
         attn = nn.functional.scaled_dot_product_attention(
-            q[None], k[None], v[None], is_causal=False)     # a query of length one needs no mask
+            q[None], k[None], v[None], is_causal=False
+        )  # a query of length one needs no mask
         out = attn[0].transpose(0, 1).reshape(-1, self.hidden_size)
         return self.o(out), k, v
 
@@ -241,7 +243,7 @@ class _CausalSelfAttention(nn.Module):
         autograd path runs through the installed rows to the fuser,
         which is the whole point of the exercise.
         """
-        q = self._heads(self.q(x))                          # [h, T, hs]
+        q = self._heads(self.q(x))  # [h, T, hs]
         k = torch.cat((k_cache, self._heads(self.k(x))), dim=1)
         v = torch.cat((v_cache, self._heads(self.v(x))), dim=1)
         t = k.shape[1] - k_cache.shape[1]
@@ -249,7 +251,8 @@ class _CausalSelfAttention(nn.Module):
         within = torch.tril(torch.ones(t, t, dtype=torch.bool, device=x.device))
         mask = torch.cat((prefix, within), dim=1)[None, None]
         attn = nn.functional.scaled_dot_product_attention(
-            q[None], k[None], v[None], attn_mask=mask, is_causal=False)
+            q[None], k[None], v[None], attn_mask=mask, is_causal=False
+        )
         out = attn[0].transpose(0, 1).reshape(t, self.hidden_size)
         return self.o(out)
 
@@ -297,10 +300,13 @@ class ReferenceEngine(nn.Module):
         if cfg.hidden_size % cfg.num_heads:
             cfg = ReferenceConfig(**{**vars(cfg), "num_heads": 1})
         self.geometry = LayerGeometry(
-            layers=cfg.layers, hidden_size=cfg.hidden_size, num_heads=cfg.num_heads,
-            attention=AttentionKind.MHA, name=cfg.name,
+            layers=cfg.layers,
+            hidden_size=cfg.hidden_size,
+            num_heads=cfg.num_heads,
+            attention=AttentionKind.MHA,
+            name=cfg.name,
         )
-        torch.manual_seed(cfg.seed)                        # determinism first (FR-14)
+        torch.manual_seed(cfg.seed)  # determinism first (FR-14)
         self.generator = torch.Generator().manual_seed(cfg.seed)
         self.embed = nn.Embedding(cfg.vocab_limit, cfg.hidden_size)
         self.position = nn.Embedding(cfg.max_seq_length, cfg.hidden_size)
@@ -335,12 +341,17 @@ class ReferenceEngine(nn.Module):
         """Prefill ``prompt_tokens`` and return the per-layer cache rows."""
         if not prompt_tokens:
             return LayeredCache([])
-        ids = torch.as_tensor([int(t) % self.config.vocab_limit for t in prompt_tokens],
-                            dtype=torch.long, device=self._device())
+        ids = torch.as_tensor(
+            [int(t) % self.config.vocab_limit for t in prompt_tokens],
+            dtype=torch.long,
+            device=self._device(),
+        )
         with torch.no_grad():
             x = self.embed(ids) + self.position(
-                torch.arange(int(ids.shape[-1]), device=ids.device)
-                .clamp(max=self.config.max_seq_length - 1))
+                torch.arange(int(ids.shape[-1]), device=ids.device).clamp(
+                    max=self.config.max_seq_length - 1
+                )
+            )
             slices: list[LayerSlice] = []
             for block in self.blocks:
                 x, k, v = block.prefill(x)
@@ -352,8 +363,10 @@ class ReferenceEngine(nn.Module):
         """Install a (possibly fused) cache, to be used by the next generation."""
         if not isinstance(cache, LayeredCache) or len(cache) != self.config.layers:
             got = len(cache) if isinstance(cache, LayeredCache) else "?"
-            msg = (f"cannot install: expected a LayeredCache of {self.config.layers} "
-                  f"layers, got {type(cache).__name__} with {got}")
+            msg = (
+                f"cannot install: expected a LayeredCache of {self.config.layers} "
+                f"layers, got {type(cache).__name__} with {got}"
+            )
             raise ValueError(msg)
         self._installed = (cache, list(prompt_tokens) if prompt_tokens is not None else None)
 
@@ -374,27 +387,36 @@ class ReferenceEngine(nn.Module):
             raise ValueError(msg)
         tok = torch.as_tensor(ids, dtype=torch.long, device=self._device())
         installed_cache, _prompt = self._installed
-        if (installed_cache is not None and len(installed_cache) == len(self.blocks)
-                and installed_cache.num_tokens > 0):
-            position0 = installed_cache.num_tokens           # after the prefix, come on
-            pos = (torch.arange(len(ids), device=tok.device) + position0
-                ).clamp(max=self.config.max_seq_length - 1)
+        if (
+            installed_cache is not None
+            and len(installed_cache) == len(self.blocks)
+            and installed_cache.num_tokens > 0
+        ):
+            position0 = installed_cache.num_tokens  # after the prefix, come on
+            pos = (torch.arange(len(ids), device=tok.device) + position0).clamp(
+                max=self.config.max_seq_length - 1
+            )
             x = self.embed(tok) + self.position(pos)
             for i, block in enumerate(self.blocks):
-                k_c = installed_cache[i].key.transpose(0, 1)     # [h, T, hs]
+                k_c = installed_cache[i].key.transpose(0, 1)  # [h, T, hs]
                 v_c = installed_cache[i].value.transpose(0, 1)
-                x = block.score(x, k_c, v_c)                 # read the fused rows
+                x = block.score(x, k_c, v_c)  # read the fused rows
         else:
             pos = torch.arange(len(ids), device=tok.device)
-            x = self.embed(tok) + self.position(
-                pos.clamp(max=self.config.max_seq_length - 1))
+            x = self.embed(tok) + self.position(pos.clamp(max=self.config.max_seq_length - 1))
             for block in self.blocks:
-                x, _k, _v = block.prefill(x)                 # the pass, plain
-        return self.lm_head(x)                              # [T, V]
+                x, _k, _v = block.prefill(x)  # the pass, plain
+        return self.lm_head(x)  # [T, V]
 
-    def generate(self, prompt_tokens: Sequence[int], *, max_new_tokens: int = 64,
-                 temperature: float = 0.0, tools: Sequence[dict] | None = None,
-                 stop: Sequence[str] | None = None) -> str:
+    def generate(
+        self,
+        prompt_tokens: Sequence[int],
+        *,
+        max_new_tokens: int = 64,
+        temperature: float = 0.0,
+        tools: Sequence[dict] | None = None,
+        stop: Sequence[str] | None = None,
+    ) -> str:
         """Decode a continuation; stop at EOS or at the first stop string.
 
         ``tools`` is accepted for ABI compatibility and passed through by
@@ -407,13 +429,14 @@ class ReferenceEngine(nn.Module):
         prompt = [int(t) % self.config.vocab_limit for t in prompt_tokens]
         installed_cache, installed_prompt = self._installed
         if installed_cache is not None and installed_prompt == prompt:
-            caches = LayeredCache([LayerSlice(r.key.clone(), r.value.clone())
-                                 for r in installed_cache])
+            caches = LayeredCache(
+                [LayerSlice(r.key.clone(), r.value.clone()) for r in installed_cache]
+            )
         else:
             caches = self.capture(prompt)
         produced: list[int] = []
         if not caches:
-            caches = self.capture([BOS])                 # condition on BOS, as usual
+            caches = self.capture([BOS])  # condition on BOS, as usual
             position, next_id = 1, BOS
         else:
             position = len(prompt)
@@ -421,20 +444,24 @@ class ReferenceEngine(nn.Module):
         with torch.no_grad():
             for _ in range(max_new_tokens):
                 tok = torch.as_tensor([next_id], dtype=torch.long, device=self._device())
-                pos = torch.as_tensor([min(position, self.config.max_seq_length - 1)],
-                                   dtype=torch.long, device=self._device())
-                x = self.embed(tok) + self.position(pos)   # [1, hidden]
+                pos = torch.as_tensor(
+                    [min(position, self.config.max_seq_length - 1)],
+                    dtype=torch.long,
+                    device=self._device(),
+                )
+                x = self.embed(tok) + self.position(pos)  # [1, hidden]
                 for i, block in enumerate(self.blocks):
-                    k_c = caches[i].key.transpose(0, 1)     # [h, T, hs]
+                    k_c = caches[i].key.transpose(0, 1)  # [h, T, hs]
                     v_c = caches[i].value.transpose(0, 1)
                     x, k_new, v_new = block.decode(x, k_c, v_c)
                     caches[i] = LayerSlice(k_new.transpose(0, 1), v_new.transpose(0, 1))
-                logits = self.lm_head(x)                    # [1, V]
-                logits = logits[:, :max(self._active_vocab(), _BASE)]
+                logits = self.lm_head(x)  # [1, V]
+                logits = logits[:, : max(self._active_vocab(), _BASE)]
                 if temperature and temperature > 0.0:
                     probs = torch.softmax(logits / temperature, dim=-1)
-                    next_id = int(torch.multinomial(probs, num_samples=1,
-                                                 generator=self.generator).item())
+                    next_id = int(
+                        torch.multinomial(probs, num_samples=1, generator=self.generator).item()
+                    )
                 else:
                     next_id = int(torch.argmax(logits, dim=-1).item())
                 if next_id == EOS:
@@ -445,7 +472,7 @@ class ReferenceEngine(nn.Module):
             text = self.decode_tokens(produced)
             for s in stop:
                 if s and s in text:
-                    text = text[:text.find(s)]
+                    text = text[: text.find(s)]
             return text
         return self.decode_tokens(produced)
 
@@ -485,14 +512,15 @@ class ReferenceAdapter(EngineAdapter):
     """
 
     engine_name = "reference"
-    DEGRADATION = None                                     # full, lossless capture
+    DEGRADATION = None  # full, lossless capture
 
     def __init__(self, model_id: str = "reference-mini", **options):
         super().__init__(model_id, **options)
         variant = self.options.get("variant", "uni")
         seed = int(self.options.get("seed", 42))
         cfg = ReferenceConfig(
-            name=str(model_id), seed=seed,
+            name=str(model_id),
+            seed=seed,
             layers=int(self.options.get("layers", 4)),
             hidden_size=int(self.options.get("hidden", 32)),
             num_heads=int(self.options.get("heads", 4)),

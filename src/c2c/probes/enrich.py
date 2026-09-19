@@ -56,17 +56,19 @@ METHODS = ("direct", "few-shot", "oracle")
 class EnrichmentResult:
     """One measurement of the enrichement oracle."""
 
-    method: str                    # one of METHOD
-    cache_len: int                 # |C| actually used while decoding
-    enriched: bool                 # were exemplars present during prefill?
-    answer: str                    # what the receiver said
-    score: float | None = None     # user-supplied scoring, if any
+    method: str  # one of METHOD
+    cache_len: int  # |C| actually used while decoding
+    enriched: bool  # were exemplars present during prefill?
+    answer: str  # what the receiver said
+    score: float | None = None  # user-supplied scoring, if any
     meta: dict = field(default_factory=dict, compare=False)
 
     def __str__(self):
         sc = "n/a" if self.score is None else f"{self.score:0.2f}"
-        return (f"{self.method:<9} │ cache_len={self.cache_len:>3} │ "
-                f"enriched={str(self.enriched):<5} │ score={sc:>5}")
+        return (
+            f"{self.method:<9} │ cache_len={self.cache_len:>3} │ "
+            f"enriched={str(self.enriched):<5} │ score={sc:>5}"
+        )
 
 
 class EnrichmentOracle:
@@ -87,8 +89,13 @@ class EnrichmentOracle:
         benchmark scorers of :mod:`c2c.eval.benchmarks`.
     """
 
-    def __init__(self, provider: CacheProvider, injector: CacheInjector | None = None,
-                 *, score: Callable[[Sequence[int], str], float] | None = None):
+    def __init__(
+        self,
+        provider: CacheProvider,
+        injector: CacheInjector | None = None,
+        *,
+        score: Callable[[Sequence[int], str], float] | None = None,
+    ):
         if not hasattr(provider, "capture"):
             msg = "enrichment oracle requires a CacheProvider (it must provide .capture)"
             raise TypeError(msg)
@@ -100,30 +107,34 @@ class EnrichmentOracle:
         self.score = score
 
     # -- the three operating modes ───────────────────────────────────────────
-    def _decode_with(self, cache: LayeredCache, prompt: Sequence[int], *,
-                     max_new_tokens: int) -> str:
+    def _decode_with(
+        self, cache: LayeredCache, prompt: Sequence[int], *, max_new_tokens: int
+    ) -> str:
         self.injector.install(cache, list(prompt))
-        return self.injector.generate(list(prompt), max_new_tokens=max_new_tokens,
-                                      temperature=0.0)
+        return self.injector.generate(list(prompt), max_new_tokens=max_new_tokens, temperature=0.0)
 
     def direct(self, question: Sequence[int], *, max_new_tokens: int = 64) -> EnrichmentResult:
         """Prefill X, decode with C(X): the unenriched reference run."""
         cache = self.provider.capture(list(question))
         answer = self._decode_with(cache, question, max_new_tokens=max_new_tokens)
-        return EnrichmentResult("direct", cache.num_tokens, False, answer,
-                                self._score(question, answer))
+        return EnrichmentResult(
+            "direct", cache.num_tokens, False, answer, self._score(question, answer)
+        )
 
-    def few_shot(self, exemplars: Sequence[int], question: Sequence[int],
-                 *, max_new_tokens: int = 64) -> EnrichmentResult:
+    def few_shot(
+        self, exemplars: Sequence[int], question: Sequence[int], *, max_new_tokens: int = 64
+    ) -> EnrichmentResult:
         """Prefill E ⊕ X, decode with C(E ⊕ X): longer cache *and* enrichment."""
         prompt = list(exemplars) + list(question)
         cache = self.provider.capture(prompt)
         answer = self._decode_with(cache, prompt, max_new_tokens=max_new_tokens)
-        return EnrichmentResult("few-shot", cache.num_tokens, True, answer,
-                                self._score(question, answer))
+        return EnrichmentResult(
+            "few-shot", cache.num_tokens, True, answer, self._score(question, answer)
+        )
 
-    def oracle(self, exemplars: Sequence[int], question: Sequence[int],
-               *, max_new_tokens: int = 64) -> EnrichmentResult:
+    def oracle(
+        self, exemplars: Sequence[int], question: Sequence[int], *, max_new_tokens: int = 64
+    ) -> EnrichmentResult:
         """Prefill E ⊕ X, drop the exemplar span, decode with C*(X), Eq. (2).
 
         The retained slice is ``C_[|E| : |E|+|X|](E ⊕ X)`` — the cache rows
@@ -132,16 +143,20 @@ class EnrichmentOracle:
         prompt = list(exemplars) + list(question)
         whole = self.provider.capture(prompt)
         start, stop = len(exemplars), len(exemplars) + len(question)
-        slice_ = LayeredCache([
-            type(row)(row.key[start:stop], row.value[start:stop])   # the question-aligned slice
-            for row in whole
-        ])
+        slice_ = LayeredCache(
+            [
+                type(row)(row.key[start:stop], row.value[start:stop])  # the question-aligned slice
+                for row in whole
+            ]
+        )
         answer = self._decode_with(slice_, question, max_new_tokens=max_new_tokens)
-        return EnrichmentResult("oracle", slice_.num_tokens, True, answer,
-                                self._score(question, answer))
+        return EnrichmentResult(
+            "oracle", slice_.num_tokens, True, answer, self._score(question, answer)
+        )
 
-    def run(self, exemplars: Sequence[int], question: Sequence[int],
-            *, max_new_tokens: int = 64) -> list[EnrichmentResult]:
+    def run(
+        self, exemplars: Sequence[int], question: Sequence[int], *, max_new_tokens: int = 64
+    ) -> list[EnrichmentResult]:
         """All three modes in one pass — the Table 1 row for one (q, E)."""
         return [
             self.direct(question, max_new_tokens=max_new_tokens),
@@ -150,8 +165,14 @@ class EnrichmentOracle:
         ]
 
     # -- Figure 4: selective enrichment layer by layer ───────────────────────
-    def enrich_layers(self, exemplars: Sequence[int], question: Sequence[int],
-                      layers: Sequence[int], *, max_new_tokens: int = 64) -> EnrichmentResult:
+    def enrich_layers(
+        self,
+        exemplars: Sequence[int],
+        question: Sequence[int],
+        layers: Sequence[int],
+        *,
+        max_new_tokens: int = 64,
+    ) -> EnrichmentResult:
         """Enrich exactly the given layers of the question-aligned cache.
 
         Layers is an iterable of layer indices; ascending order is not
@@ -180,9 +201,14 @@ class EnrichmentOracle:
             raise ValueError(msg)
         cache = LayeredCache(merged)
         answer = self._decode_with(cache, question, max_new_tokens=max_new_tokens)
-        return EnrichmentResult("oracle(selective)", cache.num_tokens, True, answer,
-                                self._score(question, answer),
-                                meta={"enriched_layers": sorted(layers)})
+        return EnrichmentResult(
+            "oracle(selective)",
+            cache.num_tokens,
+            True,
+            answer,
+            self._score(question, answer),
+            meta={"enriched_layers": sorted(layers)},
+        )
 
     # -- helpers ────────────────────────────────────────────────────────────
     def _score(self, question: Sequence[int], answer: str) -> float | None:

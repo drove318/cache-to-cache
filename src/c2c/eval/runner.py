@@ -25,23 +25,29 @@ __all__ = ["EvalResult", "run", "compare"]
 class EvalResult:
     """Scores and timings of one evaluation run, as published in Table 4/7."""
 
-    mode: str                              # receiver-only | sharer-only | t2t | c2c | routing
+    mode: str  # receiver-only | sharer-only | t2t | c2c | routing
     benchmark: str
-    accuracy: float = 0.0                  # percent, as in the paper's tables
+    accuracy: float = 0.0  # percent, as in the paper's tables
     total_time_s: float = 0.0
     items: int = 0
     per_item: list[float] = field(default_factory=list)
 
     def __str__(self):
-        return (f"{self.mode:<13} {self.benchmark:<12} acc {self.accuracy:0.2f} "
-               f"({self.items} items, {self.total_time_s:0.1f} s)")
+        return (
+            f"{self.mode:<13} {self.benchmark:<12} acc {self.accuracy:0.2f} "
+            f"({self.items} items, {self.total_time_s:0.1f} s)"
+        )
 
 
-
-
-def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
-         max_new_tokens: int | None = None, limit: int | None = None,
-         fixtures_dir: str | None = None) -> EvalResult:
+def run(
+    bench_name: str,
+    ask: Callable[[str], str],
+    *,
+    mode: str = "eval",
+    max_new_tokens: int | None = None,
+    limit: int | None = None,
+    fixtures_dir: str | None = None,
+) -> EvalResult:
     """Evaluate one ``ask`` callable on one benchmark, in one mode.
 
     ``ask(prompt) -> reply`` is the only thing the runner needs of the
@@ -51,9 +57,10 @@ def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
     asked plainly, the way a text-to-text baseline would be.
     """
     import inspect
+
     try:
         accepts_cap = "max_new_tokens" in inspect.signature(ask).parameters
-    except (ValueError, TypeError):                   # a callable with an uninspectable signature
+    except (ValueError, TypeError):  # a callable with an uninspectable signature
         accepts_cap = False
     bench = BENCHMARKS.get(bench_name)
     if bench is None:
@@ -66,7 +73,7 @@ def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
         item.setdefault("prompt", bench.prompt_for(item))
         prompt = item["prompt"]
         t0 = time.perf_counter()
-        if accepts_cap:                               # the cap rides, when the engine offers it
+        if accepts_cap:  # the cap rides, when the engine offers it
             reply = ask(prompt, max_new_tokens=cap)
         else:
             reply = ask(prompt)
@@ -80,8 +87,7 @@ def run(bench_name: str, ask: Callable[[str], str], *, mode: str = "eval",
     return result
 
 
-def compare(measured: dict[str, float], golden: dict[str, float], *,
-            tolerance: float = TOLERANCE):
+def compare(measured: dict[str, float], golden: dict[str, float], *, tolerance: float = TOLERANCE):
     """Yield ``Row(check, expected, got, delta, passed)`` per benchmark key.
 
     ``check`` is the comparison performed — here the absolute difference of
@@ -95,5 +101,6 @@ def compare(measured: dict[str, float], golden: dict[str, float], *,
             yield Row(check=key, expected=expected, got=None, delta=None, passed=False)
             continue
         delta = abs(float(got) - float(expected))
-        yield Row(check=key, expected=expected, got=float(got), delta=delta,
-                 passed=delta <= tolerance)
+        yield Row(
+            check=key, expected=expected, got=float(got), delta=delta, passed=delta <= tolerance
+        )

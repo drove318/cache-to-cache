@@ -39,12 +39,11 @@ BENCHMARKS_ORDER = ("MMLU-Redux", "ARC-C", "OpenBookQA", "C-Eval")
 TABLES: dict[str, dict] = {
     # -- abstract claims, §1 ------------------------------------------------------------
     "abstract": {
-        "gain_over_individual_pct": (6.4, 14.2),      # "6.4-14.2 % higher average"
-        "gain_over_t2t_pct": (3.1, 5.4),               # "3.1-5.4 %"
-        "average_speedup": 2.5,                        # "2.5× speedup"
-        "fusion_overhead_ms": 90.0,                    # Table 3: "*Includes 90 ms"
+        "gain_over_individual_pct": (6.4, 14.2),  # "6.4-14.2 % higher average"
+        "gain_over_t2t_pct": (3.1, 5.4),  # "3.1-5.4 %"
+        "average_speedup": 2.5,  # "2.5× speedup"
+        "fusion_overhead_ms": 90.0,  # Table 3: "*Includes 90 ms"
     },
-
     # -- Table 1: cache-enrichment oracle (§3.2.1) --------------------------------------
     "table01": {
         "columns": ("method", "cache_len", "enriched", "accuracy"),
@@ -54,7 +53,6 @@ TABLES: dict[str, dict] = {
             ("Oracle", "X", True, 62.34),
         ],
     },
-
     # -- Table 2: effective rank, before/after (§4.5) -----------------------------------
     "table02": {
         "columns": ("kind", "sharer", "receiver", "c2c"),
@@ -64,91 +62,145 @@ TABLES: dict[str, dict] = {
         ],
         "claim": "increase on the receiver side after fusion",
     },
-
     # -- Table 3: token counts and inference time, MMLU-Redux (§4.2) -------------------
     "table03": {
         "pair": ("Qwen2.5-0.5B-Instruct → Qwen3-0.6B"),
-        "columns": ("metric", "receiver_only", "sharer_only",
-                   "t2t_sharer", "t2t_receiver", "c2c_sharer", "c2c_receiver"),
+        "columns": (
+            "metric",
+            "receiver_only",
+            "sharer_only",
+            "t2t_sharer",
+            "t2t_receiver",
+            "c2c_sharer",
+            "c2c_receiver",
+        ),
         "rows": [
             ("input_tokens", 170, 187, 103, 332, 170, 170),
             ("output_tokens", 11, 19, 80, 10, 0, 12),
-            ("prefill_ms", 27, 20, 21, 32, 20 + 90, 27),   # 90 ms KV fusion
+            ("prefill_ms", 27, 20, 21, 32, 20 + 90, 27),  # 90 ms KV fusion
             ("decode_ms", 281, 326, 1312, 231, 0, 308),
             ("total_ms", 308, 346, 1596, None, 445, None),
         ],
         "speedup_t2t_to_c2c": 1596 / 445,
     },
-
     # -- Table 4 + §4.2: main results, receiver fixed (Qwen3-0.6B) ----------------------
     # accuracy (%), time (s), the columns of the table as printed
     "table04": {
         "receiver": RECEIVER,
         "benchmarks": BENCHMARKS_ORDER,
-        "receiver_only": {"MMLU-Redux": 35.53, "OpenBookQA": 39.20,
-                        "ARC-C": 41.04, "C-Eval": 32.04},
-        "receiver_only_time": {"MMLU-Redux": 0.29, "OpenBookQA": 0.27,
-                            "ARC-C": 0.29, "C-Eval": 0.26},
+        "receiver_only": {
+            "MMLU-Redux": 35.53,
+            "OpenBookQA": 39.20,
+            "ARC-C": 41.04,
+            "C-Eval": 32.04,
+        },
+        "receiver_only_time": {
+            "MMLU-Redux": 0.29,
+            "OpenBookQA": 0.27,
+            "ARC-C": 0.29,
+            "C-Eval": 0.26,
+        },
         "sharers": {
             "Qwen2.5-0.5B-Instruct": {
-                "sharer_only": {"MMLU-Redux": 38.42, "OpenBookQA": 45.60,
-                             "ARC-C": 42.09, "C-Eval": 40.21},
-                "sharer_only_time": {"MMLU-Redux": 0.34, "OpenBookQA": 0.35,
-                                  "ARC-C": 0.39, "C-Eval": 0.31},
-                "t2t": {"MMLU-Redux": 41.03, "OpenBookQA": 44.00,
-                      "ARC-C": 49.48, "C-Eval": 35.88},
-                "t2t_time": {"MMLU-Redux": 1.52, "OpenBookQA": 0.81,
-                          "ARC-C": 1.00, "C-Eval": 1.51},
-                "c2c": {"MMLU-Redux": 42.92, "OpenBookQA": 52.60,
-                      "ARC-C": 54.52, "C-Eval": 41.77},
-                "c2c_time": {"MMLU-Redux": 0.40, "OpenBookQA": 0.30,
-                          "ARC-C": 0.36, "C-Eval": 0.34},
-                "routing": {"MMLU-Redux": 35.58, "OpenBookQA": 40.80,
-                         "ARC-C": 40.70, "C-Eval": 34.61},
-                "routing_time": {"MMLU-Redux": 0.27, "OpenBookQA": 0.29,
-                             "ARC-C": 0.29, "C-Eval": 0.26},
+                "sharer_only": {
+                    "MMLU-Redux": 38.42,
+                    "OpenBookQA": 45.60,
+                    "ARC-C": 42.09,
+                    "C-Eval": 40.21,
+                },
+                "sharer_only_time": {
+                    "MMLU-Redux": 0.34,
+                    "OpenBookQA": 0.35,
+                    "ARC-C": 0.39,
+                    "C-Eval": 0.31,
+                },
+                "t2t": {"MMLU-Redux": 41.03, "OpenBookQA": 44.00, "ARC-C": 49.48, "C-Eval": 35.88},
+                "t2t_time": {"MMLU-Redux": 1.52, "OpenBookQA": 0.81, "ARC-C": 1.00, "C-Eval": 1.51},
+                "c2c": {"MMLU-Redux": 42.92, "OpenBookQA": 52.60, "ARC-C": 54.52, "C-Eval": 41.77},
+                "c2c_time": {"MMLU-Redux": 0.40, "OpenBookQA": 0.30, "ARC-C": 0.36, "C-Eval": 0.34},
+                "routing": {
+                    "MMLU-Redux": 35.58,
+                    "OpenBookQA": 40.80,
+                    "ARC-C": 40.70,
+                    "C-Eval": 34.61,
+                },
+                "routing_time": {
+                    "MMLU-Redux": 0.27,
+                    "OpenBookQA": 0.29,
+                    "ARC-C": 0.29,
+                    "C-Eval": 0.26,
+                },
                 "gain_over_individual": 11.00,
                 "gain_over_t2t": 5.36,
                 "speedup": 3.46,
             },
             "Llama3.2-1B": {
-                "sharer_only": {"MMLU-Redux": 32.30, "OpenBookQA": 32.60,
-                             "ARC-C": 33.57, "C-Eval": 31.31},
-                "sharer_only_time": {"MMLU-Redux": 0.06, "OpenBookQA": 0.07,
-                                  "ARC-C": 0.07, "C-Eval": 0.04},   # App. A.4.3, the fast one
-                "t2t": {"MMLU-Redux": 43.32, "OpenBookQA": 41.20,
-                      "ARC-C": 50.00, "C-Eval": 35.27},
-                "t2t_time": {"MMLU-Redux": 0.75, "OpenBookQA": 0.70,
-                          "ARC-C": 0.70, "C-Eval": 0.71},
-                "c2c": {"MMLU-Redux": 44.42, "OpenBookQA": 47.80,
-                      "ARC-C": 53.39, "C-Eval": 40.77},
-                "c2c_time": {"MMLU-Redux": 0.50, "OpenBookQA": 0.43,
-                          "ARC-C": 0.47, "C-Eval": 0.49},
-                "routing": {"MMLU-Redux": 33.38, "OpenBookQA": 36.40,
-                         "ARC-C": 37.22, "C-Eval": 31.92},
-                "routing_time": {"MMLU-Redux": 0.18, "OpenBookQA": 0.17,
-                             "ARC-C": 0.18, "C-Eval": 0.15},
+                "sharer_only": {
+                    "MMLU-Redux": 32.30,
+                    "OpenBookQA": 32.60,
+                    "ARC-C": 33.57,
+                    "C-Eval": 31.31,
+                },
+                "sharer_only_time": {
+                    "MMLU-Redux": 0.06,
+                    "OpenBookQA": 0.07,
+                    "ARC-C": 0.07,
+                    "C-Eval": 0.04,
+                },  # App. A.4.3, the fast one
+                "t2t": {"MMLU-Redux": 43.32, "OpenBookQA": 41.20, "ARC-C": 50.00, "C-Eval": 35.27},
+                "t2t_time": {"MMLU-Redux": 0.75, "OpenBookQA": 0.70, "ARC-C": 0.70, "C-Eval": 0.71},
+                "c2c": {"MMLU-Redux": 44.42, "OpenBookQA": 47.80, "ARC-C": 53.39, "C-Eval": 40.77},
+                "c2c_time": {"MMLU-Redux": 0.50, "OpenBookQA": 0.43, "ARC-C": 0.47, "C-Eval": 0.49},
+                "routing": {
+                    "MMLU-Redux": 33.38,
+                    "OpenBookQA": 36.40,
+                    "ARC-C": 37.22,
+                    "C-Eval": 31.92,
+                },
+                "routing_time": {
+                    "MMLU-Redux": 0.18,
+                    "OpenBookQA": 0.17,
+                    "ARC-C": 0.18,
+                    "C-Eval": 0.15,
+                },
                 "gain_over_individual": 9.64,
                 "gain_over_t2t": 4.15,
                 "speedup": 1.51,
             },
             "Qwen3-4B-Base": {
-                "sharer_only": {"MMLU-Redux": 1.03, "OpenBookQA": 2.20,        # the base
-                             "ARC-C": 1.48, "C-Eval": 5.65},                   # ignores the
-                "sharer_only_time": {"MMLU-Redux": 2.06, "OpenBookQA": 1.98,   # instructions
-                                  "ARC-C": 2.06, "C-Eval": 2.02},
-                "t2t": {"MMLU-Redux": 43.87, "OpenBookQA": 46.40,
-                      "ARC-C": 53.91, "C-Eval": 38.92},
-                "t2t_time": {"MMLU-Redux": 7.54, "OpenBookQA": 5.08,           # excessively long
-                          "ARC-C": 6.56, "C-Eval": 3.59},                      # t2t, as printed
-                "c2c": {"MMLU-Redux": 43.95, "OpenBookQA": 53.20,
-                      "ARC-C": 55.39, "C-Eval": 42.79},
-                "c2c_time": {"MMLU-Redux": 0.45, "OpenBookQA": 0.34,
-                          "ARC-C": 0.40, "C-Eval": 0.39},
-                "routing": {"MMLU-Redux": 16.39, "OpenBookQA": 22.20,
-                         "ARC-C": 19.65, "C-Eval": 15.10},
-                "routing_time": {"MMLU-Redux": 0.28, "OpenBookQA": 0.27,
-                             "ARC-C": 0.28, "C-Eval": 0.26},
+                "sharer_only": {
+                    "MMLU-Redux": 1.03,
+                    "OpenBookQA": 2.20,  # the base
+                    "ARC-C": 1.48,
+                    "C-Eval": 5.65,
+                },  # ignores the
+                "sharer_only_time": {
+                    "MMLU-Redux": 2.06,
+                    "OpenBookQA": 1.98,  # instructions
+                    "ARC-C": 2.06,
+                    "C-Eval": 2.02,
+                },
+                "t2t": {"MMLU-Redux": 43.87, "OpenBookQA": 46.40, "ARC-C": 53.91, "C-Eval": 38.92},
+                "t2t_time": {
+                    "MMLU-Redux": 7.54,
+                    "OpenBookQA": 5.08,  # excessively long
+                    "ARC-C": 6.56,
+                    "C-Eval": 3.59,
+                },  # t2t, as printed
+                "c2c": {"MMLU-Redux": 43.95, "OpenBookQA": 53.20, "ARC-C": 55.39, "C-Eval": 42.79},
+                "c2c_time": {"MMLU-Redux": 0.45, "OpenBookQA": 0.34, "ARC-C": 0.40, "C-Eval": 0.39},
+                "routing": {
+                    "MMLU-Redux": 16.39,
+                    "OpenBookQA": 22.20,
+                    "ARC-C": 19.65,
+                    "C-Eval": 15.10,
+                },
+                "routing_time": {
+                    "MMLU-Redux": 0.28,
+                    "OpenBookQA": 0.27,
+                    "ARC-C": 0.28,
+                    "C-Eval": 0.26,
+                },
                 "gain_over_individual": 11.88,
                 "gain_over_t2t": 3.06,
                 "speedup": 14.41,
@@ -156,7 +208,6 @@ TABLES: dict[str, dict] = {
         },
         "routing_note": "query-level routing never exceeds the better of the pair",
     },
-
     # -- Table 5: scaling with sequence length, LongBenchV1 (§4.3) -----------------------
     "table05": {
         "columns": ("length", "receiver", "sharer", "t2t", "c2c"),
@@ -167,7 +218,6 @@ TABLES: dict[str, dict] = {
         ],
         "claim": "C2C outperforms T2T across all sequence-length intervals",
     },
-
     # -- Table 6: sources of improvement (§4.4) -----------------------------------------
     "table06": {
         "columns": ("setting", "params", "OpenBookQA", "ARC-C", "MMLU-Redux", "C-Eval"),
@@ -178,22 +228,59 @@ TABLES: dict[str, dict] = {
         ],
         "claim": "Single < Identical < C2C consistently (higher accuracy)",
     },
-
     # -- Table 7: further pairs, heterogeneous and swap (§4.3) ---------------------------
     "table07": {
-        "columns": ("group", "receiver", "sharer", "receiver_acc", "sharer_acc",
-                   "t2t_acc", "c2c_acc", "receiver_time", "t2t_time", "c2c_time"),
+        "columns": (
+            "group",
+            "receiver",
+            "sharer",
+            "receiver_acc",
+            "sharer_acc",
+            "t2t_acc",
+            "c2c_acc",
+            "receiver_time",
+            "t2t_time",
+            "c2c_time",
+        ),
         "rows": [
-            ("heterogeneous", "Qwen3-0.6B", "Gemma3-1B", 35.53, 31.75, 41.35, 45.90,
-           0.29, 1.04, 0.30),
-            ("heterogeneous", "Qwen3-0.6B", "Qwen2.5-Math-1.5B", 35.53, 39.86,
-           43.71, 46.13, 0.29, 6.60, 0.27),
-            ("heterogeneous", "Qwen3-0.6B", "Qwen2.5-Coder-0.5B", 35.53, 25.09,
-           39.74, 46.89, 0.29, 1.59, 0.27),
-            ("swap", "Qwen2.5-0.5B", "Qwen3-0.6B", 38.42, 35.53, 32.12, 43.47,
-           0.34, 0.98, 0.21),
-            ("swap", "Qwen3-0.6B", "Qwen2.5-0.5B", 35.53, 38.42, 41.03, 46.50,
-           0.29, 1.52, 0.26),
+            (
+                "heterogeneous",
+                "Qwen3-0.6B",
+                "Gemma3-1B",
+                35.53,
+                31.75,
+                41.35,
+                45.90,
+                0.29,
+                1.04,
+                0.30,
+            ),
+            (
+                "heterogeneous",
+                "Qwen3-0.6B",
+                "Qwen2.5-Math-1.5B",
+                35.53,
+                39.86,
+                43.71,
+                46.13,
+                0.29,
+                6.60,
+                0.27,
+            ),
+            (
+                "heterogeneous",
+                "Qwen3-0.6B",
+                "Qwen2.5-Coder-0.5B",
+                35.53,
+                25.09,
+                39.74,
+                46.89,
+                0.29,
+                1.59,
+                0.27,
+            ),
+            ("swap", "Qwen2.5-0.5B", "Qwen3-0.6B", 38.42, 35.53, 32.12, 43.47, 0.34, 0.98, 0.21),
+            ("swap", "Qwen3-0.6B", "Qwen2.5-0.5B", 35.53, 38.42, 41.03, 46.50, 0.29, 1.52, 0.26),
         ],
         "claims": {
             "heterogeneous_avg_gain_over_t2t": 8.59,
@@ -201,7 +288,6 @@ TABLES: dict[str, dict] = {
             "swap_t2c_change": -6.30,
         },
     },
-
     # -- Table 8: ablation of the fuser, the ABLATION FLOOR (§4.4) -----------------------
     "table08": {
         "columns": ("method", "MMLU-Redux", "ARC-C", "OpenBookQA", "C-Eval", "Average"),
@@ -226,15 +312,19 @@ TABLES: dict[str, dict] = {
 #: where the paper is unread here, the value is held unavailable.
 TABLES["table12"] = {
     "claim": "training cost at 300 steps on one A100",
-    "gpu_hours": 9.0, "at_steps": 300,
+    "gpu_hours": 9.0,
+    "at_steps": 300,
 }
 TABLES["table13"] = {
     "claim": "many-to-one: two Sharers, one Receiver",
-    "receivers": 1, "sharers": 2, "average_accuracy": 64.60,
+    "receivers": 1,
+    "sharers": 2,
+    "average_accuracy": 64.60,
 }
 TABLES["table15"] = {
     "claim": "agentic flow, interpreter+solver, GSM8K",
-    "t_c2c_accuracy": 78.01, "benchmark": "GSM8K",
+    "t_c2c_accuracy": 78.01,
+    "benchmark": "GSM8K",
 }
 
 #: Figures 3–13 as named in the paper; the pixel data of the plots was
@@ -242,7 +332,7 @@ TABLES["table15"] = {
 #: of the unavailable, and the golden suite skips its test with this reason.
 FIGURES: dict[str, str] = {
     f"figure{n:02}": f"Figure {n} (§/App. — plot data not machine-readable"
-                    f" in the arXiv:2510.03215v2 text extraction)"
+    f" in the arXiv:2510.03215v2 text extraction)"
     for n in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 }
 
@@ -263,8 +353,7 @@ TABLE_KEYWORDS: dict[int, str] = {
     1: "table_1_the_enrichment_oracle",
     2: "table_2_the_effective_rank_increases",
     3: "table_3_the_fusion_costs",
-    4: ("c2c_beats or gains_are_the_published or deltas_are_consistent "
-        "or table_4_reproduced"),
+    4: ("c2c_beats or gains_are_the_published or deltas_are_consistent or table_4_reproduced"),
     5: "table_5_wins",
     6: "table_6_the_sources",
     7: "table_7_the_pairs",

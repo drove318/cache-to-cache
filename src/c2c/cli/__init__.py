@@ -9,4 +9,4 @@ the master; C2C is the wire between models.
 
 from __future__ import annotations
 
-__all__: list[str] = []                                          # the console, from c2c.cli.main
+__all__: list[str] = []  # the console, from c2c.cli.main

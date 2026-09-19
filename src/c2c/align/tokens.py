@@ -109,8 +109,9 @@ class TokenAlignment(Sequence):
 
     def __getitem__(self, index):
         if isinstance(index, slice):
-            return TokenAlignment(self._tokens[index],
-                                 None if self._rows is None else self._rows[index])
+            return TokenAlignment(
+                self._tokens[index], None if self._rows is None else self._rows[index]
+            )
         return self._tokens[index]
 
     def __repr__(self):
@@ -125,8 +126,10 @@ class TokenAlignment(Sequence):
         a bare TokenAlignment built by hand must pass the map explicitly.
         """
         if self._rows is None:
-            msg = ("no row map: construct via TokenAligner.align(...) or pass "
-                  "row_map=... — vocabulary ids are not row indices")
+            msg = (
+                "no row map: construct via TokenAligner.align(...) or pass "
+                "row_map=... — vocabulary ids are not row indices"
+            )
             raise LookupError(msg)
         return list(self._rows)
 
@@ -141,13 +144,20 @@ class TokenAligner:
 
     STRATEGIES = ("maximal-coverage", "first-occurrence")
 
-    def __init__(self, receiver: TokenizerLike, sharer: TokenizerLike, *,
-                 strategy: str = "maximal-coverage",
-                 pad_token: str = "<pad>",
-                 max_candidates: int = 64):
+    def __init__(
+        self,
+        receiver: TokenizerLike,
+        sharer: TokenizerLike,
+        *,
+        strategy: str = "maximal-coverage",
+        pad_token: str = "<pad>",
+        max_candidates: int = 64,
+    ):
         if strategy not in self.STRATEGIES:
-            msg = (f"unknown collision-resolution strategy {strategy!r}; "
-                  f"choose one of {self.STRATEGIES}")
+            msg = (
+                f"unknown collision-resolution strategy {strategy!r}; "
+                f"choose one of {self.STRATEGIES}"
+            )
             raise ValueError(msg)
         self.receiver = receiver
         self.sharer = sharer
@@ -214,7 +224,7 @@ class TokenAligner:
         """The coverage of a candidate: length of its decoded string."""
         try:
             return len(self._dec_s(list(ids)))
-        except Exception:                              # must not crash alignment
+        except Exception:  # must not crash alignment
             return 0
 
     # -- the alignment proper ───────────────────────────────────────────────
@@ -226,16 +236,18 @@ class TokenAligner:
             for sid, stoken in self._specials_s.items():
                 if stoken == token:
                     return AlignedToken(rid, text, (sid,), "direct")
-            if self._unk is not None:                  # … else the unk token stands in
+            if self._unk is not None:  # … else the unk token stands in
                 return AlignedToken(rid, text, (self._unk,), "unknown")
             return AlignedToken(rid, text, (rid,), "direct")
         # (1) general tokens: the one-to-many case
-        if text == "":                                 # empty pieces are kept as-is
+        if text == "":  # empty pieces are kept as-is
             return AlignedToken(rid, text, tuple(self._enc_s(" ")), "first-occurrence")
         candidates = self._candidates(text)
         if not candidates:
-            fallback = ((self._unk,),) if self._unk is not None else (
-                tuple(self._enc_s(text))[:1] or (0,),
+            fallback = (
+                ((self._unk,),)
+                if self._unk is not None
+                else (tuple(self._enc_s(text))[:1] or (0,),)
             )
             return AlignedToken(rid, text, tuple(fallback[0]), "unknown")
         if self.strategy == "first-occurrence":
@@ -290,8 +302,9 @@ class TokenAligner:
         return rows
 
     # -- chat template alignment (App. A.1.2) ───────────────────────────────
-    def align_chat(self, messages: Sequence[dict], *,
-                   template_sections: Sequence[str] | None = None):
+    def align_chat(
+        self, messages: Sequence[dict], *, template_sections: Sequence[str] | None = None
+    ):
         """Align a chat conversation between the two vocabularies.
 
         *Template sections* (control tokens such as ``<|im_start|>``) are
@@ -315,8 +328,7 @@ class TokenAligner:
                 lengths = [len(s.split()) for s in template_sections]
                 target = max(lengths)
                 entry["template_padded"] = tuple(
-                    sec if n == target
-                    else sec + " " + " ".join([self.pad_token] * (target - n))
+                    sec if n == target else sec + " " + " ".join([self.pad_token] * (target - n))
                     for sec, n in zip(template_sections, lengths)
                 )
             out.append(entry)
@@ -331,9 +343,11 @@ class TokenAligner:
         """
         a = self.align(receiver_ids)
         other = TokenAligner(
-            self.receiver, self.sharer,
-            strategy=("first-occurrence" if self.strategy == "maximal-coverage"
-                     else "maximal-coverage"),
+            self.receiver,
+            self.sharer,
+            strategy=(
+                "first-occurrence" if self.strategy == "maximal-coverage" else "maximal-coverage"
+            ),
             pad_token=self.pad_token,
         )
         b = other.align(receiver_ids)

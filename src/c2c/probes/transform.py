@@ -42,16 +42,18 @@ __all__ = ["TransformationResult", "TransformationOracle"]
 class TransformationResult:
     """How faithful (in numbers) the transformation was."""
 
-    mae: float                       # mean absolute error to the target rows
-    purity: float                    # share of rows whose nearest neighbour is intended
-    distance_before: float           # mean pairwise distance, raw caches
-    distance_after: float            # mean pairwise distance, transformed vs target
+    mae: float  # mean absolute error to the target rows
+    purity: float  # share of rows whose nearest neighbour is intended
+    distance_before: float  # mean pairwise distance, raw caches
+    distance_after: float  # mean pairwise distance, transformed vs target
     steps: int = 0
     loss_curve: tuple = field(default_factory=tuple, compare=False)
 
     def __str__(self):
-        return (f"mae {self.mae:0.4f} | purity {self.purity:0.1%} | "
-               f"d(before) {self.distance_before:0.3f} → d(after) {self.distance_after:0.3f}")
+        return (
+            f"mae {self.mae:0.4f} | purity {self.purity:0.1%} | "
+            f"d(before) {self.distance_before:0.3f} → d(after) {self.distance_after:0.3f}"
+        )
 
 
 def _mean_pairwise_distance(a, b) -> float:
@@ -73,8 +75,15 @@ class TransformationOracle:
     and the target cache, in the spirit of the appendix's setup (A.3.2).
     """
 
-    def __init__(self, *, latent_width: int | None = None, layers: int = 3,
-                lr: float = 1e-3, epochs: int = 300, seed: int = 42):
+    def __init__(
+        self,
+        *,
+        latent_width: int | None = None,
+        layers: int = 3,
+        lr: float = 1e-3,
+        epochs: int = 300,
+        seed: int = 42,
+    ):
         self.lr = float(lr)
         self.epochs = int(epochs)
         self.seed = int(seed)
@@ -83,17 +92,19 @@ class TransformationOracle:
         self.projector: nn.Module | None = None
 
     # -- the fitting ----------------------------------------------------------
-    def fit(self, source: LayeredCache, target: LayeredCache, *,
-           epochs: int | None = None) -> TransformationResult:
+    def fit(
+        self, source: LayeredCache, target: LayeredCache, *, epochs: int | None = None
+    ) -> TransformationResult:
         """Fit the projector from *source* caches onto *target* caches."""
         x, y = self._aligned_pair(source, target)
         if x.shape[1] != y.shape[1]:
-            msg = (f"aligned representations require equal feature dimensions, "
-                 f"got {x.shape[1]} and {y.shape[1]}")
+            msg = (
+                f"aligned representations require equal feature dimensions, "
+                f"got {x.shape[1]} and {y.shape[1]}"
+            )
             raise ValueError(msg)
         torch.manual_seed(self.seed)
-        self.projector = PreProjection(int(x.shape[1]), int(y.shape[1]),
-                                       layers=self.layers)
+        self.projector = PreProjection(int(x.shape[1]), int(y.shape[1]), layers=self.layers)
         optim = torch.optim.AdamW(self.projector.parameters(), lr=self.lr, weight_decay=0.0)
         curve: list[float] = []
         for _ in range(epochs or self.epochs):
@@ -102,12 +113,12 @@ class TransformationOracle:
             loss.backward()
             optim.step()
             curve.append(float(loss.detach()))
-        return self.evaluate(source, target, steps=len(curve),
-                           loss_curve=tuple(curve[-8:]))
+        return self.evaluate(source, target, steps=len(curve), loss_curve=tuple(curve[-8:]))
 
     # -- evaluating -----------------------------------------------------------
-    def evaluate(self, source: LayeredCache, target: LayeredCache, *,
-                steps: int = 0, loss_curve: tuple = ()) -> TransformationResult:
+    def evaluate(
+        self, source: LayeredCache, target: LayeredCache, *, steps: int = 0, loss_curve: tuple = ()
+    ) -> TransformationResult:
         """Score the current projector on the (source, target) pair."""
         if self.projector is None:
             msg = "cannot evaluate before fitting: no projector"
@@ -119,9 +130,14 @@ class TransformationOracle:
             d_before = _mean_pairwise_distance(x, y)
             d_after = _mean_pairwise_distance(t, y)
             purity = self._nearest_neighbour_purity(t, y)
-        return TransformationResult(mae=mae, purity=purity,
-                                 distance_before=d_before, distance_after=d_after,
-                                 steps=steps, loss_curve=tuple(loss_curve))
+        return TransformationResult(
+            mae=mae,
+            purity=purity,
+            distance_before=d_before,
+            distance_after=d_after,
+            steps=steps,
+            loss_curve=tuple(loss_curve),
+        )
 
     def transform(self, cache: LayeredCache) -> LayeredCache:
         """Map a cache into the target's representation space."""
@@ -129,6 +145,7 @@ class TransformationOracle:
             msg = "cannot transform before fitting: call .fit first"
             raise LookupError(msg)
         from ..types import LayerSlice
+
         rows = []
         with torch.no_grad():
             for slc in cache:
@@ -138,8 +155,9 @@ class TransformationOracle:
         return LayeredCache(rows)
 
     # -- plotting (in ASCII, see the manual for curses) ----------------------
-    def export(self, source: LayeredCache, target: LayeredCache, path: str, *,
-              method: str = "pca") -> str:
+    def export(
+        self, source: LayeredCache, target: LayeredCache, path: str, *, method: str = "pca"
+    ) -> str:
         """Write a two-dimensional projection of the caches as CSV.
 
         Columns: ``x, y, kind`` where kind ∈ {source, target, transformed}.
@@ -155,8 +173,9 @@ class TransformationOracle:
             coords = self._tsne(data)
         else:
             coords = self._pca(data)
-        labels = (["source"] * x.shape[0]) + (["target"] * y.shape[0]) \
-            + (["transformed"] * t.shape[0])
+        labels = (
+            (["source"] * x.shape[0]) + (["target"] * y.shape[0]) + (["transformed"] * t.shape[0])
+        )
         with open(path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             writer.writerow(("x", "y", "kind"))
@@ -168,9 +187,11 @@ class TransformationOracle:
     @staticmethod
     def _aligned_pair(source: LayeredCache, target: LayeredCache):
         """Concatenate and stack the rows of both caches into two matrices."""
+
         def stack_rows(cache):
             rows = [slc.key.reshape(slc.key.shape[0], -1) for slc in cache]
             return torch.cat(rows, dim=0)
+
         return stack_rows(source), stack_rows(target)
 
     @staticmethod
@@ -178,7 +199,7 @@ class TransformationOracle:
         """Share of transformed rows whose nearest target row is the intended one."""
         if t.shape[0] == 0 or y.shape[0] == 0:
             return 0.0
-        d = torch.cdist(t, y)                      # all pairs, no stones skipped
+        d = torch.cdist(t, y)  # all pairs, no stones skipped
         if d.shape[1] == 0:
             return 0.0
         nearest = d.argmin(dim=1)
@@ -197,9 +218,10 @@ class TransformationOracle:
         try:
             from sklearn.manifold import TSNE
         except ImportError as exc:
-            msg = ("t-SNE needs the optional scikit-learn peer "
-                  "(pip install scikit-learn); use method='pca' for the exact, "
-                  "deterministic projection")
+            msg = (
+                "t-SNE needs the optional scikit-learn peer "
+                "(pip install scikit-learn); use method='pca' for the exact, "
+                "deterministic projection"
+            )
             raise ModuleNotFoundError(msg) from exc
-        return TSNE(n_components=2, init="pca", random_state=42).fit_transform(
-            data.numpy())
+        return TSNE(n_components=2, init="pca", random_state=42).fit_transform(data.numpy())

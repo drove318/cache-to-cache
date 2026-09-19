@@ -24,8 +24,8 @@ from c2c.integrations.agents import (
 
 def _pair():
     from c2c.integrations.reference import ReferenceAdapter
-    return (ReferenceAdapter("solver", seed=11),
-            ReferenceAdapter("interpreter-helper", seed=12))
+
+    return (ReferenceAdapter("solver", seed=11), ReferenceAdapter("interpreter-helper", seed=12))
 
 
 class TestSafeEval:
@@ -45,20 +45,25 @@ class TestSafeEval:
         assert safe_eval("min(4, 5)") == pytest.approx(4.0)
         assert safe_eval("abs(0 - 6)") == pytest.approx(6.0)
         assert safe_eval("round(2.567, 2)") == pytest.approx(2.57)
-        assert safe_eval("sqrt(4)") == pytest.approx(2.0)         # from the math module
+        assert safe_eval("sqrt(4)") == pytest.approx(2.0)  # from the math module
         with pytest.raises(UnsafeExpression):
-            safe_eval("sum((1, 2, 3))")                            # sum, not on the list
+            safe_eval("sum((1, 2, 3))")  # sum, not on the list
 
     def test_a_raise_from_a_falsy_expression(self):
         """The names that are forbidden: the attribute, the import, the call."""
-        for evil in ("__import__('os').system('ls')", "open('etc/passwd')",
-                   "().__class__", "lambda: 1", "[i for i in range(3)]"):
+        for evil in (
+            "__import__('os').system('ls')",
+            "open('etc/passwd')",
+            "().__class__",
+            "lambda: 1",
+            "[i for i in range(3)]",
+        ):
             with pytest.raises((UnsafeExpression, ValueError, SyntaxError)):
-                safe_eval(evil)                                    # refused, loudly
+                safe_eval(evil)  # refused, loudly
 
     def test_the_syntax_of_the_empty_expression(self):
         with pytest.raises((UnsafeExpression, ValueError, SyntaxError)):
-            safe_eval("")                                          # nothing, evaluated
+            safe_eval("")  # nothing, evaluated
 
 
 class TestSpeculativeAcceleration:
@@ -70,17 +75,17 @@ class TestSpeculativeAcceleration:
         ids = receiver.encode("the theory of transplantation")
         result = accelerator.run(ids, sharer=sharer, receiver=receiver)
         text, stats = result if isinstance(result, tuple) else (result, None)
-        assert isinstance(text, str)                                 # text, generated or not
+        assert isinstance(text, str)  # text, generated or not
         if stats is not None:
-            assert stats.accepted <= stats.drafted                 # never more than drafted
-            assert 0.0 <= stats.acceptance_rate <= 1.0              # a rate, in range
-            assert isinstance(str(stats), str)                        # printable, as promised
+            assert stats.accepted <= stats.drafted  # never more than drafted
+            assert 0.0 <= stats.acceptance_rate <= 1.0  # a rate, in range
+            assert isinstance(str(stats), str)  # printable, as promised
 
     def test_the_acceptance_of_the_rejected(self):
         stats = SpeculativeStats(drafted=10, accepted=7)
-        assert stats.acceptance_rate == pytest.approx(0.7)         # seven, of ten
+        assert stats.acceptance_rate == pytest.approx(0.7)  # seven, of ten
         empty = SpeculativeStats()
-        assert empty.acceptance_rate == pytest.approx(0.0)          # nothing, nothing
+        assert empty.acceptance_rate == pytest.approx(0.0)  # nothing, nothing
 
 
 class TestRoutingDecisions:
@@ -92,20 +97,20 @@ class TestRoutingDecisions:
         ids = receiver.encode("a b c d e")
         result = router.run(ids, receiver=receiver, sharer=sharer)
         text, stats = result if isinstance(result, tuple) else (result, None)
-        assert isinstance(text, str)                               # an answer, routed
+        assert isinstance(text, str)  # an answer, routed
         if stats is not None:
-            assert isinstance(stats, RoutingStats)                   # a log, of the routing
+            assert isinstance(stats, RoutingStats)  # a log, of the routing
 
     def test_the_threshold_of_consultation(self):
         """A low threshold, a high consultation: above it, not above."""
         receiver, sharer = _pair()
-        eager = TokenRouter(threshold=1e-9)                           # consult, near-always
-        lazy = TokenRouter(threshold=1.0)                             # consult, near-never
+        eager = TokenRouter(threshold=1e-9)  # consult, near-always
+        lazy = TokenRouter(threshold=1.0)  # consult, near-never
         ids = receiver.encode("decide")
         a = eager.run(ids, receiver=receiver, sharer=sharer)
         b = lazy.run(ids, receiver=receiver, sharer=sharer)
         assert (a[1] if isinstance(a, tuple) else a) is not None
-        assert (b[1] if isinstance(b, tuple) else b) is not None   # both, answered
+        assert (b[1] if isinstance(b, tuple) else b) is not None  # both, answered
 
 
 class TestAgenticFlow:
@@ -115,28 +120,27 @@ class TestAgenticFlow:
         """One query, two models, three stages: the flow, end to end."""
         receiver, sharer = _pair()
         result = run_flow("what is 2 + 2 * 3?", receiver=receiver, sharer=sharer)
-        assert isinstance(result, FlowResult)                       # a result, typed
-        assert result.query == "what is 2 + 2 * 3?"                # echoed, verbatim
-        assert isinstance(result.answer, str) and result.answer     # an answer, at least
-        assert result.transport == "c2c"                             # the wire, used
-        assert isinstance(result.steps, list) and result.steps       # every step, logged
+        assert isinstance(result, FlowResult)  # a result, typed
+        assert result.query == "what is 2 + 2 * 3?"  # echoed, verbatim
+        assert isinstance(result.answer, str) and result.answer  # an answer, at least
+        assert result.transport == "c2c"  # the wire, used
+        assert isinstance(result.steps, list) and result.steps  # every step, logged
         for step in result.steps:
             assert isinstance(step, FlowStep)
-            assert step.agent and step.action                        # who, and what
-        assert str(result)                                            # readable, for humans
+            assert step.agent and step.action  # who, and what
+        assert str(result)  # readable, for humans
 
     def test_the_transport_of_the_relay(self):
         """The fallback: transport='text', the old wire, still works."""
         receiver, sharer = _pair()
-        result = run_flow("capital of france", receiver=receiver, sharer=sharer,
-                       transport="text")
-        assert result.transport == "text"                            # as configured
+        result = run_flow("capital of france", receiver=receiver, sharer=sharer, transport="text")
+        assert result.transport == "text"  # as configured
         assert isinstance(result.answer, str)
 
     def test_the_steps_of_the_execution(self):
         """A step, recorded: agent, action, payload, and its ok flag."""
         step = FlowStep(agent="solver", action="propose-program", payload="1+1")
-        assert step.ok is True                                       # by default, all is well
+        assert step.ok is True  # by default, all is well
         assert (step.agent, step.action, step.payload) == ("solver", "propose-program", "1+1")
 
     def test_the_result_is_reproducible(self):
@@ -145,7 +149,7 @@ class TestAgenticFlow:
         q = "compute 3 * 3"
         a = run_flow(q, receiver=receiver, sharer=sharer)
         b = run_flow(q, receiver=receiver, sharer=sharer)
-        assert a.answer == b.answer                                  # determinism, held
+        assert a.answer == b.answer  # determinism, held
         assert [s.action for s in a.steps] == [s.action for s in b.steps]
 
 
@@ -155,8 +159,9 @@ class TestExperimentalFlags:
     def test_cross_modal_is_flagged_experimental(self):
         """EX-5: the multi-modal fuse, present but not yet lit."""
         from c2c.integrations import agents
+
         mod = getattr(agents, "CrossModal", None)
-        if mod is None:                                              # declared, in the module
+        if mod is None:  # declared, in the module
             pytest.skip("cross-modal, not in this build")
-        instance = mod(modalities=("text",))                         # constructed, at least
-        assert instance is not None                                  # present, for now
+        instance = mod(modalities=("text",))  # constructed, at least
+        assert instance is not None  # present, for now

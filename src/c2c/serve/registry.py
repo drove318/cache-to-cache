@@ -42,8 +42,8 @@ class Pair:
 
     receiver: str
     sharer: str
-    fuser: Any | None = None                 # a c2c.fuser.Fuser, or None for relay
-    aligner: Any | None = None               # a c2c.align.TokenAligner factory
+    fuser: Any | None = None  # a c2c.fuser.Fuser, or None for relay
+    aligner: Any | None = None  # a c2c.align.TokenAligner factory
     note: str = ""
 
     @property
@@ -60,11 +60,11 @@ class ResolvedTarget:
     """What a model id resolves to: the parts of the working pipeline."""
 
     model_id: str
-    receiver: Any                     # object implementing CacheProvider+CacheInjector
+    receiver: Any  # object implementing CacheProvider+CacheInjector
     sharer: Any | None
     fuser: Any | None
     pair: Pair | None
-    relay: bool                        # True ⇒ no fusion; single-model pass-through
+    relay: bool  # True ⇒ no fusion; single-model pass-through
     spec: ModelSpec | None = None
 
 
@@ -78,16 +78,22 @@ class ModelHub:
     def __init__(self, config: ServeConfig | None = None):
         self.config = config or ServeConfig()
         self._lock = RLock()
-        self._models: dict[str, dict] = {}           # id → entry dict
-        self._pairs: dict[str, Pair] = {}            # canonical pair id → Pair
+        self._models: dict[str, dict] = {}  # id → entry dict
+        self._pairs: dict[str, Pair] = {}  # canonical pair id → Pair
         self._factories: dict[str, Callable[[str, dict], Any]] = {}
-        self.engine_name = "reference"               # built-in fallback engine
-        self.curated = False                   # nothing auto, until you register
+        self.engine_name = "reference"  # built-in fallback engine
+        self.curated = False  # nothing auto, until you register
 
     # -- registering, the interface ──────────────────────────────────────────
-    def register_model(self, model_id: str, *, provider: CacheProvider | None = None,
-                       injector: CacheInjector | None = None, options: dict | None = None,
-                       note: str = "") -> None:
+    def register_model(
+        self,
+        model_id: str,
+        *,
+        provider: CacheProvider | None = None,
+        injector: CacheInjector | None = None,
+        options: dict | None = None,
+        note: str = "",
+    ) -> None:
         """Register a single model, optionally pre-configured with its parts.
 
         ``provider`` and ``injector`` may name one and the same object
@@ -95,28 +101,41 @@ class ModelHub:
         one lazily from the engine adapter named by :attr:`engine_name`.
         """
         key = self._canonical(model_id)
-        self.curated = True                  # the operator has spoken: nothing auto
+        self.curated = True  # the operator has spoken: nothing auto
         with self._lock:
             self._models[key] = {
                 "id": key,
-                "identity": model_id,                    # build on what was given, not its
-                "provider": provider, "injector": injector,    # lowercased twin
-                "options": dict(options or {}), "note": note,
+                "identity": model_id,  # build on what was given, not its
+                "provider": provider,
+                "injector": injector,  # lowercased twin
+                "options": dict(options or {}),
+                "note": note,
             }
 
-    def register_pair(self, *, receiver: str, sharer: str, fuser=None,
-                     aligner=None, note: str = "") -> Pair:
+    def register_pair(
+        self, *, receiver: str, sharer: str, fuser=None, aligner=None, note: str = ""
+    ) -> Pair:
         """Register a (Receiver, Sharer) collaboration under its canonical id."""
-        self.curated = True                  # the operator has spoken: nothing auto
-        pair = Pair(receiver=self._canonical(receiver), sharer=self._canonical(sharer),
-                   fuser=fuser, aligner=aligner, note=note)
+        self.curated = True  # the operator has spoken: nothing auto
+        pair = Pair(
+            receiver=self._canonical(receiver),
+            sharer=self._canonical(sharer),
+            fuser=fuser,
+            aligner=aligner,
+            note=note,
+        )
         with self._lock:
             self._pairs[pair.id] = pair
             for side, origin in ((pair.receiver, receiver), (pair.sharer, sharer)):
-                if side not in self._models:             # a pair implies its two sides
-                    self._models[side] = {"id": side, "provider": None, "injector": None,
-                                        "identity": origin,           # the path as handed over
-                                        "options": {}, "note": "side of a pair"}
+                if side not in self._models:  # a pair implies its two sides
+                    self._models[side] = {
+                        "id": side,
+                        "provider": None,
+                        "injector": None,
+                        "identity": origin,  # the path as handed over
+                        "options": {},
+                        "note": "side of a pair",
+                    }
         return pair
 
     def unregister(self, model_id: str) -> bool:
@@ -141,7 +160,7 @@ class ModelHub:
     def _canonical(self, model_id: str) -> str:
         s = (model_id or "").strip()
         if s.startswith(self.config.model_prefix):
-            s = s[len(self.config.model_prefix):]
+            s = s[len(self.config.model_prefix) :]
         return s.lower()
 
     def parse_pair_id(self, model_id: str) -> tuple[str, str] | None:
@@ -174,28 +193,31 @@ class ModelHub:
         with self._lock:
             for mid in sorted(self._models):
                 note = self._models[mid].get("note") or "single model (relay)"
-                out.append((f"{self.config.model_prefix}{mid}", str(note),
-                           self._context_of(mid)))
+                out.append((f"{self.config.model_prefix}{mid}", str(note), self._context_of(mid)))
             for pid in sorted(self._pairs):
                 pair = self._pairs[pid]
                 mode = "cache-to-cache" if pair.fused else "relay"
                 note = f"{mode}: {pair.receiver} receives, {pair.sharer} shares"
                 if pair.note:
                     note += f" ({pair.note})"
-                out.append((f"{self.config.model_prefix}{pid}", note,
-                           self._context_of(pair.receiver)))
+                out.append(
+                    (f"{self.config.model_prefix}{pid}", note, self._context_of(pair.receiver))
+                )
         return out
 
     def _context_of(self, model_id: str) -> int | None:
         """The receiving model's claimed window; None on any silence."""
         try:
             from ..integrations.registry import engines
+
             target = engines.lookup(self.engine_name)
             module_name, _, attribute = target.partition(":")
             import importlib
+
             cls = getattr(importlib.import_module(module_name), attribute)
-            return cls.report_context(model_id, **(self._models.get(model_id, {})
-                                                 .get("options") or {}))
+            return cls.report_context(
+                model_id, **(self._models.get(model_id, {}).get("options") or {})
+            )
         except Exception:
             return None
 
@@ -219,9 +241,15 @@ class ModelHub:
             actor = injector if injector is not None else provider
             if actor is None:
                 return None
-            return ResolvedTarget(model_id=self.config.model_prefix + single,
-                                receiver=actor, sharer=None, fuser=None,
-                                pair=None, relay=True, spec=_spec_of(actor))
+            return ResolvedTarget(
+                model_id=self.config.model_prefix + single,
+                receiver=actor,
+                sharer=None,
+                fuser=None,
+                pair=None,
+                relay=True,
+                spec=_spec_of(actor),
+            )
         receiver_id, sharer_id = parsed
         pair_key = f"{receiver_id}←{sharer_id}"
         with self._lock:
@@ -231,12 +259,24 @@ class ModelHub:
         if recv_actor is None or shar_actor is None:
             return None
         if pair is None:
-            return ResolvedTarget(model_id=self.config.model_prefix + pair_key,
-                                receiver=recv_actor, sharer=shar_actor, fuser=None,
-                                pair=None, relay=True, spec=_spec_of(recv_actor))
-        return ResolvedTarget(model_id=self.config.model_prefix + pair_key,
-                            receiver=recv_actor, sharer=shar_actor, fuser=pair.fuser,
-                            pair=pair, relay=pair.fuser is None, spec=_spec_of(recv_actor))
+            return ResolvedTarget(
+                model_id=self.config.model_prefix + pair_key,
+                receiver=recv_actor,
+                sharer=shar_actor,
+                fuser=None,
+                pair=None,
+                relay=True,
+                spec=_spec_of(recv_actor),
+            )
+        return ResolvedTarget(
+            model_id=self.config.model_prefix + pair_key,
+            receiver=recv_actor,
+            sharer=shar_actor,
+            fuser=pair.fuser,
+            pair=pair,
+            relay=pair.fuser is None,
+            spec=_spec_of(recv_actor),
+        )
 
     # -- building blocks ─────────────────────────────────────────────────────
     def _resolve_side(self, model_id: str):
@@ -261,12 +301,17 @@ class ModelHub:
 
     def _make_entry(self, model_id: str) -> dict | None:
         if self.curated:
-            return None                        # curated: no auto-build, no entry
+            return None  # curated: no auto-build, no entry
         obj = self._build(model_id, {})
         if obj is None:
             return None
-        entry = {"id": model_id, "provider": obj, "injector": obj,
-               "options": {}, "note": f"auto-built via {self.engine_name}"}
+        entry = {
+            "id": model_id,
+            "provider": obj,
+            "injector": obj,
+            "options": {},
+            "note": f"auto-built via {self.engine_name}",
+        }
         with self._lock:
             self._models.setdefault(model_id, entry)
         return entry
@@ -280,6 +325,7 @@ class ModelHub:
             if factory is not None:
                 return factory(model_id, dict(options or {}))
             from ..integrations import engines
+
             return engines.load(self.engine_name, model_id=model_id, **(options or {}))
         except Exception:
             return None

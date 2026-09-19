@@ -39,8 +39,15 @@ from socketserver import TCPServer, ThreadingMixIn
 from .. import __version__
 from .registry import default_hub
 
-__all__ = ["MCPServer", "main", "build_parser", "MCPRequestHandler",
-           "MCPHTTPServer", "PROTOCOL_VERSION", "TOOLS"]
+__all__ = [
+    "MCPServer",
+    "main",
+    "build_parser",
+    "MCPRequestHandler",
+    "MCPHTTPServer",
+    "PROTOCOL_VERSION",
+    "TOOLS",
+]
 
 PROTOCOL_VERSION = "2025-06-18"
 
@@ -56,45 +63,53 @@ def _tool(name: str, description: str, schema: dict) -> dict:
 
 
 TOOLS = [
-    _tool("c2c_register_pair",
-          "Declare a Sharer/Receiver collaboration for cache-to-cache answers.",
-          {
-              "type": "object",
-              "properties": {
-                  "receiver": {"type": "string", "description": "receiver model id"},
-                  "sharer": {"type": "string", "description": "sharer model id"},
-                  "engine": {"type": "string",
-                            "description": "engine adapter for auto-built models",
-                            "default": "reference"},
-                  "weights_path": {"type": "string",
-                                  "description": "optional trained fuser checkpoint (.pt)"},
-              },
-              "required": ["receiver", "sharer"],
-          }),
-    _tool("c2c_fuse",
-          "Fuse the pair's caches over a prompt; report gates and ranks.",
-          {
-              "type": "object",
-              "properties": {
-                  "model": {"type": "string",
-                           "description": "the virtual pair id, e.g. c2c/a←b"},
-                  "prompt": {"type": "string", "description": "the prompt to fuse on"},
-              },
-              "required": ["model", "prompt"],
-          }),
-    _tool("c2c_ask",
-          "Ask the pair a question through the full cache-to-cache pipeline.",
-          {
-              "type": "object",
-              "properties": {
-                  "model": {"type": "string",
-                           "description": "the virtual model id, e.g. c2c/a←b"},
-                  "prompt": {"type": "string", "description": "the question"},
-                  "max_tokens": {"type": "integer", "minimum": 1, "default": 64},
-                  "temperature": {"type": "number", "minimum": 0.0, "default": 0.0},
-              },
-              "required": ["model", "prompt"],
-          }),
+    _tool(
+        "c2c_register_pair",
+        "Declare a Sharer/Receiver collaboration for cache-to-cache answers.",
+        {
+            "type": "object",
+            "properties": {
+                "receiver": {"type": "string", "description": "receiver model id"},
+                "sharer": {"type": "string", "description": "sharer model id"},
+                "engine": {
+                    "type": "string",
+                    "description": "engine adapter for auto-built models",
+                    "default": "reference",
+                },
+                "weights_path": {
+                    "type": "string",
+                    "description": "optional trained fuser checkpoint (.pt)",
+                },
+            },
+            "required": ["receiver", "sharer"],
+        },
+    ),
+    _tool(
+        "c2c_fuse",
+        "Fuse the pair's caches over a prompt; report gates and ranks.",
+        {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "the virtual pair id, e.g. c2c/a←b"},
+                "prompt": {"type": "string", "description": "the prompt to fuse on"},
+            },
+            "required": ["model", "prompt"],
+        },
+    ),
+    _tool(
+        "c2c_ask",
+        "Ask the pair a question through the full cache-to-cache pipeline.",
+        {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "the virtual model id, e.g. c2c/a←b"},
+                "prompt": {"type": "string", "description": "the question"},
+                "max_tokens": {"type": "integer", "minimum": 1, "default": 64},
+                "temperature": {"type": "number", "minimum": 0.0, "default": 0.0},
+            },
+            "required": ["model", "prompt"],
+        },
+    ),
 ]
 
 
@@ -137,7 +152,7 @@ class MCPServer:
         while self.running:
             line = self.reader.readline()
             if not line:
-                break                                   # EOF: the client hung up
+                break  # EOF: the client hung up
             line = line.strip()
             if not line:
                 continue
@@ -170,25 +185,32 @@ class MCPServer:
         is_notification = identifier is None and method is not None
         if not isinstance(message, dict) or not isinstance(method, str):
             if not is_notification:
-                emit(self._error(identifier, INVALID_REQUEST,
-                              "a JSON-RPC request must carry a method"))
+                emit(
+                    self._error(
+                        identifier, INVALID_REQUEST, "a JSON-RPC request must carry a method"
+                    )
+                )
             return
-        if is_notification:                           # notifications: acknowledged
-            return                                       # ignored, as the spec says
+        if is_notification:  # notifications: acknowledged
+            return  # ignored, as the spec says
         handler = self._handlers.get(method)
         if handler is None:
-            emit(self._error(identifier, METHOD_NOT_FOUND,
-                          f"method {method!r} is not known"))
+            emit(self._error(identifier, METHOD_NOT_FOUND, f"method {method!r} is not known"))
             return
         try:
             result = handler(message.get("params") or {})
         except _BadParams as exc:
             emit(self._error(identifier, INVALID_PARAMS, str(exc)))
             return
-        except Exception as exc:                        # report, do not crash
+        except Exception as exc:  # report, do not crash
             self.log(f"handler {method} raised {exc.__class__.__name__}: {exc}")
-            emit(self._error(identifier, INTERNAL_ERROR,
-                         f"internal error: {exc.__class__.__name__} (see the server log)"))
+            emit(
+                self._error(
+                    identifier,
+                    INTERNAL_ERROR,
+                    f"internal error: {exc.__class__.__name__} (see the server log)",
+                )
+            )
             return
         emit({"jsonrpc": "2.0", "id": identifier, "result": result})
 
@@ -201,8 +223,10 @@ class MCPServer:
             "serverInfo": {
                 "name": "c2c-mcp",
                 "version": __version__,
-                "instructions": ("Cache-to-Cache: fuse a Sharer's KV-cache into a "
-                               "Receiver's. Register a pair, ask it, inspect it."),
+                "instructions": (
+                    "Cache-to-Cache: fuse a Sharer's KV-cache into a "
+                    "Receiver's. Register a pair, ask it, inspect it."
+                ),
             },
         }
 
@@ -224,15 +248,25 @@ class MCPServer:
             payload = handler(arguments)
         except _BadParams:
             raise
-        except Exception as exc:                        # tool errors are results
+        except Exception as exc:  # tool errors are results
             self.log(f"tool {name} raised {exc.__class__.__name__}: {exc}")
-            return {"content": [{"type": "text",
-                              "text": f"tool {name} failed: {exc.__class__.__name__}"}],
-                   "isError": True}
-        return {"content": [{"type": "text",
-                            "text": payload if isinstance(payload, str)
-                            else json.dumps(payload, ensure_ascii=False)}],
-               "isError": False}
+            return {
+                "content": [
+                    {"type": "text", "text": f"tool {name} failed: {exc.__class__.__name__}"}
+                ],
+                "isError": True,
+            }
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": payload
+                    if isinstance(payload, str)
+                    else json.dumps(payload, ensure_ascii=False),
+                }
+            ],
+            "isError": False,
+        }
 
     # -- the three tools ────────────────────────────────────────────────────
     def _tool_c2c_register_pair(self, args: dict) -> dict:
@@ -248,13 +282,16 @@ class MCPServer:
 
             from ..zoo.publish import DEFAULT_ZOO_ROOT
             from .openai_proxy import _load_fuser_state
-            root = os.path.realpath(os.path.expanduser(
-                os.environ.get("C2C_ZOO_ROOT") or DEFAULT_ZOO_ROOT))
+
+            root = os.path.realpath(
+                os.path.expanduser(os.environ.get("C2C_ZOO_ROOT") or DEFAULT_ZOO_ROOT)
+            )
             path = os.path.realpath(os.path.expanduser(str(weights_path)))
             if not path.startswith(root + os.sep) or not path.endswith(".pt"):
                 raise _BadParams(
                     f"weights_path must name a .pt inside the zoo root {root!r}; "
-                    "publish it first (c2c zoo publish), or move the zoo with C2C_ZOO_ROOT")
+                    "publish it first (c2c zoo publish), or move the zoo with C2C_ZOO_ROOT"
+                )
             fuser = _load_fuser_state(path)
         pair = self.hub.register_pair(receiver=receiver, sharer=sharer, fuser=fuser)
         return {"ok": True, "id": f"c2c/{pair.id}", "fused": pair.fused}
@@ -275,6 +312,7 @@ class MCPServer:
         token_mapping = None
         if len(r_ids) != len(s_ids):
             from ..align.tokens import TokenAligner
+
             token_mapping = TokenAligner(receiver, sharer).select_rows(r_ids)
         fused = fuser(cache_r, cache_s, token_mapping=token_mapping)
         report = fuser.report(num_tokens=len(r_ids)) if hasattr(fuser, "report") else None
@@ -292,19 +330,29 @@ class MCPServer:
         max_tokens = int(args.get("max_tokens") or 64)
         temperature = float(args.get("temperature") or 0.0)
         from .openai_proxy import ChatPipeline
+
         pipeline = ChatPipeline(hub=self.hub)
-        result = pipeline.complete(model=model, prompt_text=prompt,
-                                max_new_tokens=max_tokens, temperature=temperature,
-                                tools=None, stop=None)
-        return {"answer": result["answer"], "used_cache": result["used_cache"],
-               "usage": {"prompt_tokens": result["prompt_tokens"],
-                       "completion_tokens": result["completion_tokens"]}}
+        result = pipeline.complete(
+            model=model,
+            prompt_text=prompt,
+            max_new_tokens=max_tokens,
+            temperature=temperature,
+            tools=None,
+            stop=None,
+        )
+        return {
+            "answer": result["answer"],
+            "used_cache": result["used_cache"],
+            "usage": {
+                "prompt_tokens": result["prompt_tokens"],
+                "completion_tokens": result["completion_tokens"],
+            },
+        }
 
     # -- JSON-RPC error objects, per the canonical table ───────────────────
     @staticmethod
     def _error(identifier, code: int, message: str) -> dict:
-        return {"jsonrpc": "2.0", "id": identifier,
-               "error": {"code": code, "message": message}}
+        return {"jsonrpc": "2.0", "id": identifier, "error": {"code": code, "message": message}}
 
 
 class _BadParams(ValueError):  # noqa: N818 — raised and caught in this module alone
@@ -323,24 +371,37 @@ def build_parser(prog: str = "c2c-mcp") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description="MCP server of the cache-to-cache house: the tools of the "
-                    "trade over JSON-RPC (spec HL-2).",
-        epilog="the tools are the verbs; the caches are the nouns; the loop stays the client's.")
-    parser.add_argument("-e", "--engine", default=None,
-                        help="engine adapter for auto-built models (default 'reference')")
-    parser.add_argument("--transport", choices=("stdio", "http"), default="stdio",
-                        help="the wire beneath: stdio (the default) or http")
-    parser.add_argument("--host", default="127.0.0.1",
-                        help="http only: interface to bind (default the loopback)")
-    parser.add_argument("--port", type=int, default=8789,
-                        help="http only: port to listen on (default 8789)")
-    parser.add_argument("--api-key", default=None,
-                       help="http only: when set, require 'Authorization: Bearer <key>'")
-    parser.add_argument("--certfile", default=None,
-                       help="http only: PEM certificate; with --keyfile, TLS on the wire")
-    parser.add_argument("--keyfile", default=None,
-                       help="http only: PEM key for --certfile")
-    parser.add_argument("--verbose", action="store_true",
-                        help="report every request to stderr")
+        "trade over JSON-RPC (spec HL-2).",
+        epilog="the tools are the verbs; the caches are the nouns; the loop stays the client's.",
+    )
+    parser.add_argument(
+        "-e",
+        "--engine",
+        default=None,
+        help="engine adapter for auto-built models (default 'reference')",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "http"),
+        default="stdio",
+        help="the wire beneath: stdio (the default) or http",
+    )
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="http only: interface to bind (default the loopback)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8789, help="http only: port to listen on (default 8789)"
+    )
+    parser.add_argument(
+        "--api-key", default=None, help="http only: when set, require 'Authorization: Bearer <key>'"
+    )
+    parser.add_argument(
+        "--certfile",
+        default=None,
+        help="http only: PEM certificate; with --keyfile, TLS on the wire",
+    )
+    parser.add_argument("--keyfile", default=None, help="http only: PEM key for --certfile")
+    parser.add_argument("--verbose", action="store_true", help="report every request to stderr")
     return parser
 
 
@@ -350,7 +411,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
     server_version = f"c2c-mcp/{__version__}"
     protocol_version = "HTTP/1.1"
 
-    server_core: MCPServer | None = None               # bound by main()
+    server_core: MCPServer | None = None  # bound by main()
     api_key: str | None = None
     verbose = False
 
@@ -374,43 +435,64 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
     def _authorized(self) -> bool:
         if not self.api_key:
-            return True                                     # the door, open by design
+            return True  # the door, open by design
         header = self.headers.get("Authorization", "") or ""
         scheme, _, token = header.partition(" ")
         from .openai_proxy import constant_time_equals
+
         return scheme.lower() == "bearer" and constant_time_equals(token, self.api_key)
 
-    def do_GET(self) -> None:                              # noqa: N802
+    def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         if path in ("/healthz", "/"):
-            self._json({"status": "ok", "service": "c2c-mcp", "version": __version__,
-                        "protocol": PROTOCOL_VERSION,
-                        "tools": [tool["name"] for tool in TOOLS]})
+            self._json(
+                {
+                    "status": "ok",
+                    "service": "c2c-mcp",
+                    "version": __version__,
+                    "protocol": PROTOCOL_VERSION,
+                    "tools": [tool["name"] for tool in TOOLS],
+                }
+            )
             return
         self._json({"error": {"message": f"no such path: {path!r}"}}, HTTPStatus.NOT_FOUND)
 
-    def do_POST(self) -> None:                             # noqa: N802
+    def do_POST(self) -> None:  # noqa: N802
         if not self._authorized():
-            self._json({"jsonrpc": "2.0", "id": None, "error": {
-                "code": -32001, "message": "Incorrect API key provided."}},
-                HTTPStatus.UNAUTHORIZED)
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32001, "message": "Incorrect API key provided."},
+                },
+                HTTPStatus.UNAUTHORIZED,
+            )
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(length) if length > 0 else b""
         try:
             message = json.loads(raw.decode("utf-8") or "{}")
         except (UnicodeDecodeError, json.JSONDecodeError):
-            self._json({"jsonrpc": "2.0", "id": None,
-                        "error": {"code": PARSE_ERROR, "message": "parse error"}}
-                        )
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": PARSE_ERROR, "message": "parse error"},
+                }
+            )
             return
         if not isinstance(message, dict):
-            self._json({"jsonrpc": "2.0", "id": None,
-                        "error": {"code": INVALID_REQUEST, "message": "a JSON object is required"}})
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": INVALID_REQUEST, "message": "a JSON object is required"},
+                }
+            )
             return
         reply = self.server_core.respond(message) if self.server_core else None
-        if reply is None:                                  # the notification, acknowledged
-            self.send_response(HTTPStatus.NO_CONTENT)         # in silence, as per the spec
+        if reply is None:  # the notification, acknowledged
+            self.send_response(HTTPStatus.NO_CONTENT)  # in silence, as per the spec
             self.end_headers()
             return
         self._json(reply)
@@ -436,12 +518,17 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
 
     from ..utils.console import banner, error_hint
     from .openai_proxy import is_loopback
+
     api_key = args.api_key or os.environ.get("C2C_API_KEY")
     if not api_key and not is_loopback(args.host):
-        print(error_hint("the HTTP transport, off the loopback, must have a key: "
-                        "--api-key KEY, or C2C_API_KEY in the environment",
-                        hint="on the loopback the pipe itself is the trust; off it, the key is"),
-              file=sys.stderr)
+        print(
+            error_hint(
+                "the HTTP transport, off the loopback, must have a key: "
+                "--api-key KEY, or C2C_API_KEY in the environment",
+                hint="on the loopback the pipe itself is the trust; off it, the key is",
+            ),
+            file=sys.stderr,
+        )
         return 2
     MCPRequestHandler.server_core = server
     MCPRequestHandler.api_key = api_key
@@ -449,16 +536,22 @@ def main(argv: Sequence[str] | None = None, *, reader=None, writer=None, hub=Non
         httpd = MCPHTTPServer((args.host, args.port), MCPRequestHandler)
         if args.certfile and args.keyfile:
             from .openai_proxy import _make_ssl_context
+
             httpd.socket = _make_ssl_context(args.certfile, args.keyfile).wrap_socket(
-                httpd.socket, server_side=True)
+                httpd.socket, server_side=True
+            )
     except OSError as exc:
         sys.stderr.write(f"c2c-mcp: cannot bind {args.host}:{args.port}: {exc}\n")
         return 1
     sys.stderr.write(banner("mcp", __version__) + "\n")
     scheme = "https" if (args.certfile and args.keyfile) else "http"
-    sys.stderr.write(f"  listening on {scheme}://{args.host}:{args.port} "
-                     "(JSON-RPC over POST /); the tools of the trade\n")
-    sys.stderr.write("  the tools are the verbs; the caches are the nouns; the loop stays the client's.\n")
+    sys.stderr.write(
+        f"  listening on {scheme}://{args.host}:{args.port} "
+        "(JSON-RPC over POST /); the tools of the trade\n"
+    )
+    sys.stderr.write(
+        "  the tools are the verbs; the caches are the nouns; the loop stays the client's.\n"
+    )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

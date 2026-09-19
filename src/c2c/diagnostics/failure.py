@@ -56,8 +56,10 @@ class LayerAttribution:
 
     def __str__(self):
         blame = "SUSPECT" if self.suspect else "clean"
-        return (f"layer {self.layer:>2}  g={self.gate:0.3f}  "
-                f"Δ={self.contribution:0.3f}  conf={self.confidence:0.3f}  [{blame}]")
+        return (
+            f"layer {self.layer:>2}  g={self.gate:0.3f}  "
+            f"Δ={self.contribution:0.3f}  conf={self.confidence:0.3f}  [{blame}]"
+        )
 
 
 class StructuredLog(logging.Logger):
@@ -67,17 +69,20 @@ class StructuredLog(logging.Logger):
         super().__init__("c2c.failure")
         if not self.handlers:
             from logging import NullHandler
-            self.addHandler(NullHandler())          # silence is golden
+
+            self.addHandler(NullHandler())  # silence is golden
         self.setLevel(logging.INFO)
         self._stream = stream
-        self.records_written: list[dict] = []      # in-memory, for tests/CLI
+        self.records_written: list[dict] = []  # in-memory, for tests/CLI
 
     def log_attribution(self, **fields) -> None:
         """Emit one structured record; returns immediately, never blocks."""
-        clean = {k: (round(v, 6) if isinstance(v, float) and math.isfinite(v) else v)
-                 for k, v in fields.items()}
+        clean = {
+            k: (round(v, 6) if isinstance(v, float) and math.isfinite(v) else v)
+            for k, v in fields.items()
+        }
         line = json.dumps(clean, ensure_ascii=False, sort_keys=True, default=str)
-        self.records_written.append(clean)            # the mirror, always on
+        self.records_written.append(clean)  # the mirror, always on
         if self._stream is not None:
             self._stream.write(line + "\n")
             self._stream.flush()
@@ -104,6 +109,7 @@ class FailureProbe:
     @staticmethod
     def _magnitude(tensor) -> float:
         import torch
+
         t = tensor.reshape(-1) if hasattr(tensor, "reshape") else torch.as_tensor(tensor)
         return float(t.norm()) if t.numel() else 0.0
 
@@ -113,12 +119,14 @@ class FailureProbe:
         if hasattr(a, "__sub__") and hasattr(b, "__sub__"):
             return a - b
         import torch
+
         ta = torch.as_tensor(a, dtype=torch.float32)
         tb = torch.as_tensor(b, dtype=torch.float32)
         return ta - tb
 
-    def compare(self, own: LayeredCache, fused: LayeredCache,
-                gate_values: Sequence[float]) -> list[LayerAttribution]:
+    def compare(
+        self, own: LayeredCache, fused: LayeredCache, gate_values: Sequence[float]
+    ) -> list[LayerAttribution]:
         """Attribute the contribution of every mapped layer pair.
 
         ``own`` is the receiver's C(X); ``fused`` the result C_f; both must
@@ -129,8 +137,7 @@ class FailureProbe:
             msg = f"compare needs equal layer counts, got {len(own)} vs {len(fused)}"
             raise ValueError(msg)
         if len(gate_values) != len(own):
-            msg = (f"one gate value per layer required: expected {len(own)}, "
-                   f"got {len(gate_values)}")
+            msg = f"one gate value per layer required: expected {len(own)}, got {len(gate_values)}"
             raise ValueError(msg)
         out: list[LayerAttribution] = []
         for n, (o, f, g) in enumerate(zip(own, fused, gate_values, strict=True)):
@@ -142,17 +149,24 @@ class FailureProbe:
             suspect = float(g) > 0.5 and contribution > self.threshold
             note = ""
             if suspect:
-                note = ("open gate moved this layer beyond the threshold; the "
-                        "Sharer's contextual understanding may mislead the Receiver "
-                        "(paper App. A.4.6)")
-            out.append(LayerAttribution(layer=n, gate=float(g),
-                                       contribution=float(contribution),
-                                       confidence=float(confidence),
-                                       suspect=bool(suspect), note=note))
+                note = (
+                    "open gate moved this layer beyond the threshold; the "
+                    "Sharer's contextual understanding may mislead the Receiver "
+                    "(paper App. A.4.6)"
+                )
+            out.append(
+                LayerAttribution(
+                    layer=n,
+                    gate=float(g),
+                    contribution=float(contribution),
+                    confidence=float(confidence),
+                    suspect=bool(suspect),
+                    note=note,
+                )
+            )
         return out
 
-    def report(self, attributions: Sequence[LayerAttribution], *,
-               emit: bool = True) -> str:
+    def report(self, attributions: Sequence[LayerAttribution], *, emit: bool = True) -> str:
         """Format (and optionally log) a table of attributions.
 
         Returns the human-readable rendering; the machine-readable form

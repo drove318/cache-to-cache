@@ -45,8 +45,13 @@ from dataclasses import dataclass, field
 from .reference import EOS
 
 __all__ = [
-    "FlowResult", "run_flow", "SpeculativeAccelerator", "SpeculativeStats",
-    "TokenRouter", "RoutingStats", "CrossModal",
+    "FlowResult",
+    "run_flow",
+    "SpeculativeAccelerator",
+    "SpeculativeStats",
+    "TokenRouter",
+    "RoutingStats",
+    "CrossModal",
 ]
 
 # ---------------------------------------------------------------------------
@@ -72,8 +77,24 @@ _UNARY_OPS: dict[type, Callable] = {
 #: built-ins, nothing else — resolved against the live modules, so a
 #: misspelling is reported at import time, not at eval time
 _ALLOWED_FUNCS: dict[str, Callable] = {}
-for _name in ("sqrt", "log", "log2", "log10", "exp", "pow", "floor", "ceil",
-              "factorial", "gcd", "lcm", "hypot", "trunc", "sin", "cos", "tan"):
+for _name in (
+    "sqrt",
+    "log",
+    "log2",
+    "log10",
+    "exp",
+    "pow",
+    "floor",
+    "ceil",
+    "factorial",
+    "gcd",
+    "lcm",
+    "hypot",
+    "trunc",
+    "sin",
+    "cos",
+    "tan",
+):
     _fn = getattr(math, _name, None)
     if _fn is None:
         msg = f"math.{_name} is not a function in this Python"
@@ -96,7 +117,7 @@ def _evaluate(node: ast.AST) -> float:
         return _evaluate(node.body)
     if isinstance(node, ast.Constant):
         if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-            return node.value                              # integers, kept whole
+            return node.value  # integers, kept whole
         raise UnsafeExpression(f"constant {node.value!r} is not a number")
     if isinstance(node, ast.Tuple):
         return tuple(_evaluate(e) for e in node.elts)
@@ -134,12 +155,13 @@ def safe_eval(expression: str) -> float:
 # EX-6: interpreter + solver flow over C2C (App. A.5.3, Table 15)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FlowStep:
     """One logged step of an agentic flow (for the harness's trace)."""
 
-    agent: str                       # "solver" | "interpreter"
-    action: str                      # "propose-program" | "execute" | "answer"
+    agent: str  # "solver" | "interpreter"
+    action: str  # "propose-program" | "execute" | "answer"
     payload: str
     ok: bool = True
 
@@ -152,20 +174,27 @@ class FlowResult:
     answer: str
     program: str | None
     steps: list[FlowStep] = field(default_factory=list)
-    transport: str = "c2c"           # how the two models talked
+    transport: str = "c2c"  # how the two models talked
     executed: float | None = None
 
     def __str__(self):
         head = f"answer: {self.answer!r}  program: {self.program!r}"
         if self.executed is not None:
             head += f"  = {self.executed}"
-        trace = "\n".join(f"  {s.agent:>11} {s.action:<14} {s.payload!r}"
-                        for s in self.steps)
+        trace = "\n".join(f"  {s.agent:>11} {s.action:<14} {s.payload!r}" for s in self.steps)
         return f"{head}\n{trace}"
 
 
-def run_flow(query: str, *, receiver, sharer, transport: str = "c2c",
-             max_tokens: int = 64, aligner=None, fuse=None) -> FlowResult:
+def run_flow(
+    query: str,
+    *,
+    receiver,
+    sharer,
+    transport: str = "c2c",
+    max_tokens: int = 64,
+    aligner=None,
+    fuse=None,
+) -> FlowResult:
     """Execute one interpreter+solver flow, in the C2C fashion.
 
     The protocol (App. A.5.3):
@@ -198,7 +227,9 @@ def run_flow(query: str, *, receiver, sharer, transport: str = "c2c",
         "'PROGRAM: ', that computes the numeric answer, then a line "
         "'ANSWER: ' with the result."
     )
-    proposal = _ask(sharer, proposal_prompt) if transport == "c2c" else _ask(receiver, proposal_prompt)
+    proposal = (
+        _ask(sharer, proposal_prompt) if transport == "c2c" else _ask(receiver, proposal_prompt)
+    )
     steps = [FlowStep("solver", "propose-program", proposal)]
 
     program = _extract_program(proposal)
@@ -207,8 +238,14 @@ def run_flow(query: str, *, receiver, sharer, transport: str = "c2c",
         try:
             executed = safe_eval(program)
             steps.append(FlowStep("interpreter", "execute", program, ok=True))
-        except (UnsafeExpression, SyntaxError, TypeError, ValueError, ZeroDivisionError,
-               OverflowError):
+        except (
+            UnsafeExpression,
+            SyntaxError,
+            TypeError,
+            ValueError,
+            ZeroDivisionError,
+            OverflowError,
+        ):
             steps.append(FlowStep("interpreter", "execute", program, ok=False))
             executed = None
 
@@ -220,25 +257,33 @@ def run_flow(query: str, *, receiver, sharer, transport: str = "c2c",
         "Give the final answer on a line prefixed 'ANSWER: '."
     )
     answer_text = _ask(receiver, answer_prompt)
-    if fuse is not None:                      # the cache-to-cache leg of the flow
+    if fuse is not None:  # the cache-to-cache leg of the flow
         primed = fuse(query)
         if primed is not None:
             receiver.install(primed, receiver.encode(answer_prompt))
             answer_text = _ask(receiver, answer_prompt)
     steps.append(FlowStep("solver", "answer", answer_text))
-    return FlowResult(query=query, answer=_extract_answer(answer_text) or answer_text,
-                    program=program, steps=steps, transport=transport, executed=executed)
+    return FlowResult(
+        query=query,
+        answer=_extract_answer(answer_text) or answer_text,
+        program=program,
+        steps=steps,
+        transport=transport,
+        executed=executed,
+    )
 
 
 def _extract_program(text: str) -> str | None:
     for line in reversed((text or "").splitlines()):
         line = line.strip()
         if line.startswith("PROGRAM:"):
-            return line[len("PROGRAM:"):].strip() or None
+            return line[len("PROGRAM:") :].strip() or None
     for line in reversed((text or "").splitlines()):
         candidate = line.strip()
-        if candidate and all(ch.isdigit() or ch in " +-*/().%_abcdefghijklmnopqrstuvwxyz,"
-                           "**[]'\"=\\" for ch in candidate):
+        if candidate and all(
+            ch.isdigit() or ch in " +-*/().%_abcdefghijklmnopqrstuvwxyz,**[]'\"=\\"
+            for ch in candidate
+        ):
             try:
                 ast.parse(candidate, mode="eval")
                 return candidate
@@ -251,13 +296,14 @@ def _extract_answer(text: str) -> str | None:
     for line in reversed((text or "").splitlines()):
         line = line.strip()
         if line.startswith("ANSWER:"):
-            return line[len("ANSWER:"):].strip() or None
+            return line[len("ANSWER:") :].strip() or None
     return (text or "").strip() or None
 
 
 # ---------------------------------------------------------------------------
 # EX-2: speculative decoding — the sharer drafts, the receiver verifies
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SpeculativeStats:
@@ -273,9 +319,11 @@ class SpeculativeStats:
         return self.accepted / self.drafted if self.drafted else 0.0
 
     def __str__(self):
-        return (f"drafted={self.drafted} accepted={self.accepted} "
-                f"({self.acceptance_rate:0.1%}) verified={self.verified_steps} "
-                f"saved≈{self.wall_saved_tokens}")
+        return (
+            f"drafted={self.drafted} accepted={self.accepted} "
+            f"({self.acceptance_rate:0.1%}) verified={self.verified_steps} "
+            f"saved≈{self.wall_saved_tokens}"
+        )
 
 
 class SpeculativeAccelerator:
@@ -297,16 +345,25 @@ class SpeculativeAccelerator:
             raise ValueError(msg)
         self.draft_length = int(draft_length)
 
-    def run(self, prompt_tokens: Sequence[int], *, sharer, receiver,
-            fuse: Callable[[], None] | None = None, max_new_tokens: int = 64) -> tuple[str, SpeculativeStats]:
+    def run(
+        self,
+        prompt_tokens: Sequence[int],
+        *,
+        sharer,
+        receiver,
+        fuse: Callable[[], None] | None = None,
+        max_new_tokens: int = 64,
+    ) -> tuple[str, SpeculativeStats]:
         stats = SpeculativeStats()
         if fuse is not None:
-            fuse()                                        # prime the cache
+            fuse()  # prime the cache
         produced: list[int] = list(prompt_tokens)
         with_ = getattr(receiver, "score", None)
         if with_ is None:
-            msg = ("the receiver's CacheInjector must provide .score() for "
-                  "speculative verification; use an adapter that honours it")
+            msg = (
+                "the receiver's CacheInjector must provide .score() for "
+                "speculative verification; use an adapter that honours it"
+            )
             raise TypeError(msg)
         while len(produced) - len(prompt_tokens) < max_new_tokens:
             remaining = max_new_tokens - (len(produced) - len(prompt_tokens))
@@ -314,24 +371,24 @@ class SpeculativeAccelerator:
             if not draft_ids:
                 break
             stats.drafted += len(draft_ids)
-            logits = with_(produced)                      # one teacher-forced pass
+            logits = with_(produced)  # one teacher-forced pass
             rows = len(logits) if not hasattr(logits, "shape") else int(logits.shape[0])
             base = len(produced)
             accepted = 0
             for offset, drafted in enumerate(draft_ids):
-                row = base - 1 + offset                   # the row that predicts this draft
+                row = base - 1 + offset  # the row that predicts this draft
                 if row >= rows:
                     break
                 best = _argmax(logits[row])
                 stats.verified_steps += 1
                 if best != drafted:
-                    produced.append(best)                 # the correction settles it
+                    produced.append(best)  # the correction settles it
                     break
                 produced.append(drafted)
                 accepted += 1
             stats.accepted += accepted
             stats.wall_saved_tokens += max(0, accepted - 1)
-        text = receiver.decode_tokens(produced[len(prompt_tokens):])
+        text = receiver.decode_tokens(produced[len(prompt_tokens) :])
         return text, stats
 
 
@@ -366,6 +423,7 @@ def _argmax(row) -> int:
 # EX-3: token-level routing
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RoutingStats:
     """Traffic report of one routed generation."""
@@ -375,8 +433,10 @@ class RoutingStats:
     total: int = 0
 
     def __str__(self):
-        return (f"receiver {self.routed_to_receiver}, sharer {self.routed_to_sharer} "
-                f"(total {self.total})")
+        return (
+            f"receiver {self.routed_to_receiver}, sharer {self.routed_to_sharer} "
+            f"(total {self.total})"
+        )
 
 
 class TokenRouter:
@@ -399,13 +459,16 @@ class TokenRouter:
         self.threshold = float(threshold)
         self.consult = consult
 
-    def run(self, prompt_tokens: Sequence[int], *, receiver, sharer,
-            max_new_tokens: int = 64) -> tuple[str, RoutingStats]:
+    def run(
+        self, prompt_tokens: Sequence[int], *, receiver, sharer, max_new_tokens: int = 64
+    ) -> tuple[str, RoutingStats]:
         stats = RoutingStats()
         score = getattr(receiver, "score", None)
         if score is None:
-            msg = ("the receiver's CacheInjector must provide .score() for routing; "
-                  "use an adapter that honours it")
+            msg = (
+                "the receiver's CacheInjector must provide .score() for routing; "
+                "use an adapter that honours it"
+            )
             raise TypeError(msg)
         produced: list[int] = []
         context = list(prompt_tokens)
@@ -415,7 +478,7 @@ class TokenRouter:
             values = row.tolist() if hasattr(row, "tolist") else list(row)
             best = _argmax(values)
             top = max(values)
-            exps = [math.exp(v - top) for v in values]    # softmax, taken carefully
+            exps = [math.exp(v - top) for v in values]  # softmax, taken carefully
             total = sum(exps) or 1.0
             p = exps[best] / total
             stats.total += 1
@@ -437,6 +500,7 @@ class TokenRouter:
 # ---------------------------------------------------------------------------
 # EX-4: cross-modal — declared, gated off, reported truthfully
 # ---------------------------------------------------------------------------
+
 
 class CrossModal:
     """Vision(-language(-action)) cache fusion — roadmap, not yet shipped.

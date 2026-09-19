@@ -16,6 +16,9 @@ from .layers import (
 from .tokens import AlignedToken, TokenAligner
 
 __all__ = [
-    "TokenAligner", "AlignedToken",
-    "LayerMapping", "terminal_mapping", "depth_normalized_mapping",
+    "TokenAligner",
+    "AlignedToken",
+    "LayerMapping",
+    "terminal_mapping",
+    "depth_normalized_mapping",
 ]

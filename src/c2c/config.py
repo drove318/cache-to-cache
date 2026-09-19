@@ -18,9 +18,18 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any
 
 __all__ = [
-    "C2CConfig", "FuserConfig", "GateConfig", "BlendConfig", "AlignConfig",
-    "TrainRecipe", "ServeConfig", "PrivacyConfig", "load_config",
-    "from_env", "MAN_C2C_CONFIG", "DEFAULT_SEED",
+    "C2CConfig",
+    "FuserConfig",
+    "GateConfig",
+    "BlendConfig",
+    "AlignConfig",
+    "TrainRecipe",
+    "ServeConfig",
+    "PrivacyConfig",
+    "load_config",
+    "from_env",
+    "MAN_C2C_CONFIG",
+    "DEFAULT_SEED",
 ]
 
 DEFAULT_SEED = 42  # paper: seed 42, determinism first (FR-14, §5)
@@ -46,13 +55,13 @@ class FuserConfig:
     component — both LLMs stay frozen (paper §3.3.4, FR-02).
     """
 
-    variant: str = "simple"          # simple | c2c-c (C2C-C, App. A.1.3)
-    activation: str = "gelu"         # between projection and feature-fusion
-    latent_size: int | None = None   # override the projected dim; None → receiver d
-    pre_projection_layers: int = 3   # C2C-C: 3-layer MLP pre-projection (FR-09)
-    dropout: float = 0.0             # optional dropout on cache entries
-    residual: bool = True            # Table 8 floor: +Fuse (Eq. 3 residual path)
-    gating: bool = True              # Table 8: +Gate (False → ones, no gate)
+    variant: str = "simple"  # simple | c2c-c (C2C-C, App. A.1.3)
+    activation: str = "gelu"  # between projection and feature-fusion
+    latent_size: int | None = None  # override the projected dim; None → receiver d
+    pre_projection_layers: int = 3  # C2C-C: 3-layer MLP pre-projection (FR-09)
+    dropout: float = 0.0  # optional dropout on cache entries
+    residual: bool = True  # Table 8 floor: +Fuse (Eq. 3 residual path)
+    gating: bool = True  # Table 8: +Gate (False → ones, no gate)
 
     def __post_init__(self):
         if self.variant not in ("simple", "c2c-c"):
@@ -74,8 +83,8 @@ class GateConfig:
 
     tau_max: float = 1.0
     tau_min: float = 0.001
-    threshold: float = 0.5           # hard decision at inference: open if p > θ
-    straight_through: bool = True    # ST-G estimator gradients, soft sampling
+    threshold: float = 0.5  # hard decision at inference: open if p > θ
+    straight_through: bool = True  # ST-G estimator gradients, soft sampling
 
     def temperature_at(self, step: int, total_steps: int) -> float:
         """The linear temperature schedule τ(step) = τ_max − (τ_max−τ_min)·step/T."""
@@ -94,12 +103,12 @@ class BlendConfig:
     (back-to-front). Above 50 % the accuracy must rise monotonically.
     """
 
-    fraction: float = 1.0            # 0.0 … 1.0 (or 0 … 100 percent, normalized)
-    direction: str = "former"        # former | latter
+    fraction: float = 1.0  # 0.0 … 1.0 (or 0 … 100 percent, normalized)
+    direction: str = "former"  # former | latter
 
     def __post_init__(self):
         frac = self.fraction
-        if 1 < frac <= 100:          # tolerate percentages: 75 → 0.75
+        if 1 < frac <= 100:  # tolerate percentages: 75 → 0.75
             frac = frac / 100.0
         object.__setattr__(self, "fraction", min(1.0, max(0.0, frac)))
         if self.direction not in ("former", "latter"):
@@ -111,10 +120,10 @@ class BlendConfig:
 class AlignConfig:
     """Token & layer alignment (FR-10, FR-11)."""
 
-    token_collision: str = "maximal-coverage"   # maximal-coverage | first-occurrence
-    layers: str = "terminal"                    # terminal | depth-normalized (Eq. 5)
-    unknown_fallback: str = "keep"              # keep | replace (tokenizer behaviour)
-    pad_token: str = "<pad>"                    # template sections length padding
+    token_collision: str = "maximal-coverage"  # maximal-coverage | first-occurrence
+    layers: str = "terminal"  # terminal | depth-normalized (Eq. 5)
+    unknown_fallback: str = "keep"  # keep | replace (tokenizer behaviour)
+    pad_token: str = "<pad>"  # template sections length padding
 
     def __post_init__(self):
         if self.token_collision not in ("maximal-coverage", "first-occurrence"):
@@ -134,20 +143,20 @@ class TrainRecipe:
     """
 
     dataset: str = "teknium/OpenHermes-2.5"
-    num_samples: int = 500_000       # first 500k samples
+    num_samples: int = 500_000  # first 500k samples
     max_seq_length: int = 2048
     epochs: int = 1
     macro_batch_size: int = 256
-    learning_rate: float = 1e-4      # linear scheduler
-    warmup_ratio: float = 0.10       # 10 % warmup
+    learning_rate: float = 1e-4  # linear scheduler
+    warmup_ratio: float = 0.10  # 10 % warmup
     weight_decay: float = 0.01
-    max_grad_norm: float = 1.0       # gradient clipping
+    max_grad_norm: float = 1.0  # gradient clipping
     seed: int = DEFAULT_SEED
-    total_steps: int = 1929          # ~1929 steps per epoch
+    total_steps: int = 1929  # ~1929 steps per epoch
     # convergence targets (paper Table 12 / App. A.3.5): informational
     target_train_loss_steps: int = 250
     target_eval_stable_steps: int = 1000
-    gpu_hours_budget: float = 9.0    # ≤ 9 GPU-hours at 300 steps on one A100
+    gpu_hours_budget: float = 9.0  # ≤ 9 GPU-hours at 300 steps on one A100
 
     def warmup_steps(self) -> int:
         return int(self.total_steps * self.warmup_ratio)
@@ -159,15 +168,15 @@ class ServeConfig:
 
     host: str = "127.0.0.1"
     port: int = 8788
-    certfile: str | None = None      # HTTPS: PEM certificate
-    keyfile: str | None = None       # HTTPS: PEM key
-    api_key: str | None = None       # optional Bearer auth
-    max_new_tokens: int = 64         # paper evaluation: max response 64
-    communication_tokens_budget: int = 256   # paper: communication 256
-    model_prefix: str = "c2c/"       # virtual model ids start with this prefix
-    pair_separator: str = "←"        # `c2c/<receiver>←<sharer>`; ASCII ok too
+    certfile: str | None = None  # HTTPS: PEM certificate
+    keyfile: str | None = None  # HTTPS: PEM key
+    api_key: str | None = None  # optional Bearer auth
+    max_new_tokens: int = 64  # paper evaluation: max response 64
+    communication_tokens_budget: int = 256  # paper: communication 256
+    model_prefix: str = "c2c/"  # virtual model ids start with this prefix
+    pair_separator: str = "←"  # `c2c/<receiver>←<sharer>`; ASCII ok too
     cors: bool = True
-    privacy: bool = False          # --privacy: refuse the sharer, digest the logs (EX-5)
+    privacy: bool = False  # --privacy: refuse the sharer, digest the logs (EX-5)
 
     def pair_from_model(self, model_id: str) -> tuple[str, str] | None:
         """Parse a virtual model id into (receiver, sharer).
@@ -183,7 +192,7 @@ class ServeConfig:
             return None
         raw = model_id
         if raw.startswith(self.model_prefix):
-            raw = raw[len(self.model_prefix):]
+            raw = raw[len(self.model_prefix) :]
         for sep in (self.pair_separator, "+", "-->", "->", "→", "--", ":"):
             if sep in raw:
                 left, right = raw.split(sep, 1)
@@ -198,8 +207,8 @@ class PrivacyConfig:
     """EX-5 privacy mode: cache segments on the wire without explicit text."""
 
     enabled: bool = False
-    aes_gcm: bool = True             # AES-GCM on the wire (extra: c2c-cache[crypto])
-    no_text_egress: bool = True      # `--no-text`: raw strings never leave the box
+    aes_gcm: bool = True  # AES-GCM on the wire (extra: c2c-cache[crypto])
+    no_text_egress: bool = True  # `--no-text`: raw strings never leave the box
 
 
 @dataclass(frozen=True)
@@ -214,8 +223,8 @@ class C2CConfig:
     serve: ServeConfig = field(default_factory=ServeConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     seed: int = DEFAULT_SEED
-    device: str = "auto"             # auto | cpu | cuda | mps
-    root: str | None = None          # state dir; default ~/.cache/c2c
+    device: str = "auto"  # auto | cpu | cuda | mps
+    root: str | None = None  # state dir; default ~/.cache/c2c
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +299,18 @@ def load_config(path: str | None = None, *, environ: dict[str, str] | None = Non
     configuration errors should be loud, user mistakes tolerated.
     """
     import json
+
     warnings: list[str] = []
     cfg = C2CConfig()
-    candidates = [path] if path else [
-        os.path.join(os.environ.get("C2C_ROOT", os.path.expanduser("~/.cache/c2c")), "config.json"),
-    ]
+    candidates = (
+        [path]
+        if path
+        else [
+            os.path.join(
+                os.environ.get("C2C_ROOT", os.path.expanduser("~/.cache/c2c")), "config.json"
+            ),
+        ]
+    )
     for cand in filter(None, candidates):
         if os.path.isfile(cand):
             with open(cand, encoding="utf-8") as fh:
@@ -391,5 +407,5 @@ END C2C.CONFIG(5)
 """
 
 
-if __name__ == "__main__":   # python -m c2c.config  prints the man page
+if __name__ == "__main__":  # python -m c2c.config  prints the man page
     print(MAN_C2C_CONFIG)

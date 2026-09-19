@@ -20,6 +20,7 @@ __all__ = ["MLXAdapter", "available"]
 
 def available() -> bool:
     from importlib.util import find_spec
+
     return find_spec("mlx_lm") is not None and find_spec("mlx.core") is not None
 
 
@@ -28,15 +29,20 @@ class MLXAdapter(EngineAdapter):
 
     engine_name = "MLX"
     required_extra = "mlx"
-    DEGRADATION = ("the bindings expose no cache hook: prefill-only capture; "
-                   "fusion reduced to the receiver's own cache")
+    DEGRADATION = (
+        "the bindings expose no cache hook: prefill-only capture; "
+        "fusion reduced to the receiver's own cache"
+    )
 
     def __init__(self, model_id: str, **options):
         super().__init__(model_id, **options)
         if not available():
-            raise AdapterNotSupported("the 'mlx' adapter needs mlx and mlx-lm",
-                                    hint="pip install 'c2c-cache[mlx]' on an Apple Silicon mac")
+            raise AdapterNotSupported(
+                "the 'mlx' adapter needs mlx and mlx-lm",
+                hint="pip install 'c2c-cache[mlx]' on an Apple Silicon mac",
+            )
         from importlib import import_module
+
         self._mlx = import_module("mlx.core")
         self._mlx_lm = import_module("mlx_lm")
         self._model = None
@@ -55,28 +61,42 @@ class MLXAdapter(EngineAdapter):
         layers = int(getattr(cfg, "num_hidden_layers", 1) or 1) if cfg else 1
         hidden = int(getattr(cfg, "hidden_size", 1) or 1) if cfg else 1
         heads = int(getattr(cfg, "num_attention_heads", 1) or 1) if cfg else 1
-        return ModelSpec(id=self.model_id,
-                        geometry=LayerGeometry(layers=layers, hidden_size=hidden,
-                                           num_heads=heads, name=self.model_id),
-                        family=str(getattr(cfg, "model_type", "mlx") if cfg else "mlx"),
-                        instruction_tuned=bool(self.options.get("instruction_tuned", True)))
+        return ModelSpec(
+            id=self.model_id,
+            geometry=LayerGeometry(
+                layers=layers, hidden_size=hidden, num_heads=heads, name=self.model_id
+            ),
+            family=str(getattr(cfg, "model_type", "mlx") if cfg else "mlx"),
+            instruction_tuned=bool(self.options.get("instruction_tuned", True)),
+        )
 
     def capture(self, prompt_tokens):
         self._degraded = True
-        return LayeredCache([])                            # documented degradation
+        return LayeredCache([])  # documented degradation
 
     def install(self, cache, prompt_tokens=None):
         self._pending = None
 
-    def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
-                 tools=None, stop=None):
+    def generate(
+        self,
+        prompt_tokens,
+        *,
+        max_new_tokens: int = 64,
+        temperature: float = 0.0,
+        tools=None,
+        stop=None,
+    ):
         self._ensure()
         from importlib import import_module
+
         driver = import_module("mlx_lm.generate.driver")
-        stream = driver.generate(prompt=self.decode_tokens(prompt_tokens), model=self._model,
-                               tokenizer=self._tokenizer,
-                               max_tokens=int(max_new_tokens),
-                               temp=float(temperature or 0.0))
+        stream = driver.generate(
+            prompt=self.decode_tokens(prompt_tokens),
+            model=self._model,
+            tokenizer=self._tokenizer,
+            max_tokens=int(max_new_tokens),
+            temp=float(temperature or 0.0),
+        )
         return "".join(stream)
 
     def encode(self, text: str):

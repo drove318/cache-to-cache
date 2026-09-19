@@ -21,6 +21,13 @@ from .core import FUSER_VARIANTS, Fuser, FuserPair
 from .modules import DynamicWeighting, Gate, Projection
 
 __all__ = [
-    "Fuser", "FuserPair", "Projection", "DynamicWeighting", "Gate",
-    "PreProjection", "apply_blend", "sweep", "FUSER_VARIANTS",
+    "Fuser",
+    "FuserPair",
+    "Projection",
+    "DynamicWeighting",
+    "Gate",
+    "PreProjection",
+    "apply_blend",
+    "sweep",
+    "FUSER_VARIANTS",
 ]

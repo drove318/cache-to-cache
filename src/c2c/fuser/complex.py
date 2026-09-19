@@ -40,8 +40,9 @@ class PreProjection(nn.Module):
     streams of the frozen models; only this module's weights learn.
     """
 
-    def __init__(self, in_features: int, out_features: int, *, layers: int = 3,
-                 activation: str = "gelu"):
+    def __init__(
+        self, in_features: int, out_features: int, *, layers: int = 3, activation: str = "gelu"
+    ):
         super().__init__()
         if layers < 1:
             msg = f"an MLP with {layers} layers makes no sense; use layers >= 1"
@@ -53,7 +54,7 @@ class PreProjection(nn.Module):
         d = in_features
         for i in range(layers):
             blocks.append(nn.Linear(d, out_features))
-            if i < layers - 1:                     # activation between layers only
+            if i < layers - 1:  # activation between layers only
                 blocks.append(get_activation(activation))
             d = out_features
         self.mlp = nn.Sequential(*blocks)

@@ -31,10 +31,19 @@ SEED = 42
 def adapter_pair(*, receiver_seed=SEED, sharer_seed=SEED):
     """Load the reference pair through the registry, the way the CLI does."""
     from c2c.integrations import engines
-    receiver = engines.load("reference", model_id="receiver-mini",
-                       seed=receiver_seed, layers=4, hidden=16, heads=4)
-    sharer = engines.load("reference", model_id="sharer-mini",
-                       seed=sharer_seed, variant="bi", layers=3, hidden=12, heads=3)
+
+    receiver = engines.load(
+        "reference", model_id="receiver-mini", seed=receiver_seed, layers=4, hidden=16, heads=4
+    )
+    sharer = engines.load(
+        "reference",
+        model_id="sharer-mini",
+        seed=sharer_seed,
+        variant="bi",
+        layers=3,
+        hidden=12,
+        heads=3,
+    )
     return receiver, sharer
 
 
@@ -77,6 +86,7 @@ def tokenizers():
 def tiny_dataset(tmp_path):
     """A JSON-Lines training set in the OpenHermes style, four records."""
     import json
+
     records = [
         {"instruction": "What is two plus two?", "input": "", "output": "four"},
         {"instruction": "Capital of France?", "input": "", "output": "Paris"},

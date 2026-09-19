@@ -26,12 +26,12 @@ import urllib.request
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 
-__all__ = ["Benchmark", "BENCHMARKS", "load_benchmark", "extract_answer",
-           "DEFAULT_FIXTURES"]
+__all__ = ["Benchmark", "BENCHMARKS", "load_benchmark", "extract_answer", "DEFAULT_FIXTURES"]
 
 # up four: file → eval → c2c → src → repository root
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))))
+_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 DEFAULT_FIXTURES = os.path.join(_ROOT, "tests", "fixtures")
 
 #: letter of the choices, as the papers put them: (A) (B) (C) (D) …
@@ -45,17 +45,18 @@ class Benchmark:
 
     name: str
     fixture: str
-    domain: str                       # reasoning | knowledge | language | math | long-context
+    domain: str  # reasoning | knowledge | language | math | long-context
     metric: str = "accuracy"
     max_out: int = 64
-    official_prompt: bool = False     # LongBench uses its official prompt template
+    official_prompt: bool = False  # LongBench uses its official prompt template
 
     def prompt_for(self, item: dict) -> str:
         """Render the zero-shot prompt for one item, choices and all."""
         choices = item.get("choices") or []
         lettered = "\n".join(f"({_LETTERS[i]}) {c}" for i, c in enumerate(choices))
-        return (f"{item['question']}\n{lettered}\n\n"
-               f"Answer with the letter of the correct choice only.")
+        return (
+            f"{item['question']}\n{lettered}\n\nAnswer with the letter of the correct choice only."
+        )
 
 
 BENCHMARKS: dict[str, Benchmark] = {
@@ -63,28 +64,32 @@ BENCHMARKS: dict[str, Benchmark] = {
     "arc-c": Benchmark("arc-c", "arc_challenge.jsonl", "reasoning"),
     "openbookqa": Benchmark("openbookqa", "openbookqa.jsonl", "reasoning"),
     "c-eval": Benchmark("c-eval", "ceval.jsonl", "knowledge"),
-    "longbench-v1": Benchmark("longbench-v1", "longbench.jsonl", "long-context",
-                           max_out=2048, official_prompt=True),
+    "longbench-v1": Benchmark(
+        "longbench-v1", "longbench.jsonl", "long-context", max_out=2048, official_prompt=True
+    ),
     "gsm8k": Benchmark("gsm8k", "gsm8k.jsonl", "math"),
 }
 
 
-def load_benchmark(name: str, *, fixtures_dir: str | None = None,
-                  limit: int | None = None) -> Iterator[dict]:
+def load_benchmark(
+    name: str, *, fixtures_dir: str | None = None, limit: int | None = None
+) -> Iterator[dict]:
     """Yield the items of one benchmark, cache first, fixtures always.
 
     Raises KeyError for an unknown benchmark (with the list of known ones)
     and FileNotFoundError when neither cache nor fixture can be found.
     """
     if name not in BENCHMARKS:
-        msg = (f"unknown benchmark {name!r}; known: {', '.join(sorted(BENCHMARKS))}")
+        msg = f"unknown benchmark {name!r}; known: {', '.join(sorted(BENCHMARKS))}"
         raise KeyError(msg)
     bench = BENCHMARKS[name]
     root = fixtures_dir or os.environ.get("C2C_FIXTURES", DEFAULT_FIXTURES)
     path = os.path.join(root, bench.fixture)
     if not os.path.isfile(path):
-        msg = (f"no fixture for benchmark {name!r} at {path!r}; run the fetch helper "
-              f"or bundle the fixtures")
+        msg = (
+            f"no fixture for benchmark {name!r} at {path!r}; run the fetch helper "
+            f"or bundle the fixtures"
+        )
         raise FileNotFoundError(msg)
     count = 0
     with open(path, encoding="utf-8") as fh:
@@ -138,12 +143,14 @@ def extract_answer(reply: str, choices: Sequence[str] | None = None) -> int | No
 
 def scorer(bench: Benchmark) -> Callable[[dict, str], float]:
     """The scorer of one benchmark: 1.0 for the right choice, 0.0 otherwise."""
+
     def _score(item: dict, reply: str) -> float:
         got = extract_answer(reply, item.get("choices"))
         want = item.get("answer")
         if isinstance(want, str):
             want = _LETTERS.find(want.strip().upper()) if len(want.strip()) == 1 else int(want)
         return 1.0 if (got is not None and got == want) else 0.0
+
     return _score
 
 
@@ -155,8 +162,10 @@ def fetch(url: str, destination: str, *, timeout: float = 60.0) -> bool:
     """
     tmp = destination + ".part"
     try:
-        request = urllib.request.Request(url, headers={
-            "User-Agent": "c2c-cache/eval (+https://github.com/drove318/cache-to-cache)"})
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "c2c-cache/eval (+https://github.com/drove318/cache-to-cache)"},
+        )
         with urllib.request.urlopen(request, timeout=timeout) as resp, open(tmp, "wb") as out:
             while True:
                 chunk = resp.read(1 << 16)

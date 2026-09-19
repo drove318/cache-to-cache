@@ -22,9 +22,18 @@ from enum import Enum, IntEnum
 from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
-    "AttentionKind", "BlendDirection", "LayerGeometry", "LayerSlice",
-    "LayeredCache", "ModelSpec", "CacheProvider", "CacheInjector",
-    "FusionReport", "TensorLike", "concat_rows", "select",
+    "AttentionKind",
+    "BlendDirection",
+    "LayerGeometry",
+    "LayerSlice",
+    "LayeredCache",
+    "ModelSpec",
+    "CacheProvider",
+    "CacheInjector",
+    "FusionReport",
+    "TensorLike",
+    "concat_rows",
+    "select",
 ]
 
 TensorLike = Any  # torch.Tensor, numpy.ndarray, or any duck with +/-/*/slicing.
@@ -33,9 +42,9 @@ TensorLike = Any  # torch.Tensor, numpy.ndarray, or any duck with +/-/*/slicing.
 class AttentionKind(IntEnum):
     """Attention flavour of a model (paper §3.1; FR-12 handles all kinds)."""
 
-    MHA = 0   # multi-head
-    GQA = 1   # grouped-query
-    MQA = 2   # multi-query
+    MHA = 0  # multi-head
+    GQA = 1  # grouped-query
+    MQA = 2  # multi-query
 
 
 class BlendDirection(Enum):
@@ -47,8 +56,8 @@ class BlendDirection(Enum):
     fraction in both directions once the fraction passes 50 %.
     """
 
-    FORMER = "former"    # front-to-back
-    LATTER = "latter"    # back-to-front
+    FORMER = "former"  # front-to-back
+    LATTER = "latter"  # back-to-front
 
     def __str__(self):
         return self.value
@@ -57,6 +66,7 @@ class BlendDirection(Enum):
 # --------------------------------------------------------------------------
 # small helper functions (dispatch by tensor type; see utils.seq)
 # --------------------------------------------------------------------------
+
 
 def concat_rows(a: TensorLike, b: TensorLike) -> TensorLike:
     """Concatenate two row-major tensors along the token axis (dim 0).
@@ -80,6 +90,7 @@ def concat_rows(a: TensorLike, b: TensorLike) -> TensorLike:
     msg = f"can not concat rows of types {type(a).__name__} and {type(b).__name__}"
     raise TypeError(msg)
 
+
 def _istensor_pair(a, b) -> bool:
     """Return True if both operands look like tensors (have a `shape` attr)."""
     return hasattr(a, "shape") and hasattr(b, "shape")
@@ -90,9 +101,7 @@ def _concat_tensor_rows(a, b):
         torch = __import__("torch")
     except ImportError:
         torch = None
-    if torch is not None and (
-        isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor)
-    ):
+    if torch is not None and (isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor)):
         return torch.cat((a, b), dim=0)
     try:
         numpy = __import__("numpy")
@@ -129,7 +138,7 @@ def select(seq: Sequence, *, key=None, default=None, require=None):
     best_k = best if key is None else key(best)
     for candidate in items[1:]:
         k = candidate if key is None else key(candidate)
-        if k > best_k:                       # strict >: ties keep first occurrence
+        if k > best_k:  # strict >: ties keep first occurrence
             best, best_k = candidate, k
     return best
 
@@ -137,6 +146,7 @@ def select(seq: Sequence, *, key=None, default=None, require=None):
 # --------------------------------------------------------------------------
 # geometries and caches
 # --------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class LayerGeometry:
@@ -150,10 +160,10 @@ class LayerGeometry:
     layers: int
     hidden_size: int
     num_heads: int = 1
-    head_size: int = 0                 # 0 → derived: hidden_size // num_heads
-    num_key_value_heads: int | None = None   # None → same as num_heads (MHA)
+    head_size: int = 0  # 0 → derived: hidden_size // num_heads
+    num_key_value_heads: int | None = None  # None → same as num_heads (MHA)
     attention: AttentionKind = AttentionKind.MHA
-    name: str | None = None            # model card name, e.g. "Qwen3-0.6B"
+    name: str | None = None  # model card name, e.g. "Qwen3-0.6B"
 
     def __post_init__(self):
         if self.head_size == 0:
@@ -217,8 +227,7 @@ class LayerSlice:
 
     def concat(self, other: LayerSlice) -> LayerSlice:
         """Sequence-wise concatenation (⊕ in the paper's Eq. (1)/(4))."""
-        return LayerSlice(concat_rows(self.key, other.key),
-                           concat_rows(self.value, other.value))
+        return LayerSlice(concat_rows(self.key, other.key), concat_rows(self.value, other.value))
 
     def __sub__(self, other):  # token-wise difference, for diagnostics only
         if not isinstance(other, LayerSlice):
@@ -313,14 +322,14 @@ class LayeredCache:
 class ModelSpec:
     """What an adapter must report about the model it drives (model card)."""
 
-    id: str                          # canonical lowercase id, e.g. "qwen2.5-0.5b"
+    id: str  # canonical lowercase id, e.g. "qwen2.5-0.5b"
     geometry: LayerGeometry
-    family: str = "unknown"          # qwen2.5 | qwen3 | llama3.2 | gemma3 | ...
+    family: str = "unknown"  # qwen2.5 | qwen3 | llama3.2 | gemma3 | ...
     size_billions: float | None = None
-    instruction_tuned: bool = True   # base vs. instruct (paper Table 4 uses Base)
-    vocab_file: str | None = None    # tokenizer vocabulary, if persisted
-    vocab_size: int = 0            # pieces of the tokenizer, on the card
-    context_length: int = 0        # tokens the model itself claims; 0 = unknown
+    instruction_tuned: bool = True  # base vs. instruct (paper Table 4 uses Base)
+    vocab_file: str | None = None  # tokenizer vocabulary, if persisted
+    vocab_size: int = 0  # pieces of the tokenizer, on the card
+    context_length: int = 0  # tokens the model itself claims; 0 = unknown
 
     def __str__(self):
         tuned = "instruct" if self.instruction_tuned else "base"
@@ -354,7 +363,7 @@ class FusionReport:
             if er:
                 lines.append(
                     f"  {kind:<5} effective rank: before {er['before']:0.1f} → "
-                    f"after {er['after']:0.1f} (Δ {er['after']-er['before']:+0.1f})"
+                    f"after {er['after']:0.1f} (Δ {er['after'] - er['before']:+0.1f})"
                 )
         for note in self.notes:
             lines.append(f"  note: {note}")
@@ -364,6 +373,7 @@ class FusionReport:
 # --------------------------------------------------------------------------
 # the adapter ABI: one interface, many implementations (spec §4.1)
 # --------------------------------------------------------------------------
+
 
 @runtime_checkable
 class CacheProvider(Protocol):
@@ -386,8 +396,7 @@ class CacheProvider(Protocol):
 class CacheInjector(Protocol):
     """Installs a cache before decoding (FR-01 counterpart of Provider)."""
 
-    def spec(self) -> ModelSpec:
-        ...
+    def spec(self) -> ModelSpec: ...
 
     def install(self, cache: LayeredCache, prompt_tokens: Sequence[int] | None = None) -> None:
         """Install ``cache`` as the receiver's prefill cache for the next call."""
@@ -398,7 +407,7 @@ class CacheInjector(Protocol):
         prompt_tokens: Sequence[int],
         *,
         max_new_tokens: int = 64,
-        temperature: float = 0.0,      # greedy by default (paper: T=0)
+        temperature: float = 0.0,  # greedy by default (paper: T=0)
         tools: Sequence[dict] | None = None,
         stop: Sequence[str] | None = None,
     ) -> str:

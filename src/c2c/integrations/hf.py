@@ -27,6 +27,7 @@ __all__ = ["HFAdapter", "available"]
 def available() -> bool:
     """Is the engine importable right now? (cheap, no side effects)."""
     from importlib.util import find_spec
+
     return find_spec("transformers") is not None
 
 
@@ -42,8 +43,10 @@ class HFAdapter(EngineAdapter):
         if not available():
             raise AdapterNotSupported(
                 "the 'hf' adapter needs the transformers package",
-                hint="pip install 'c2c-cache[hf]' (or pip install transformers>=4.40)")
+                hint="pip install 'c2c-cache[hf]' (or pip install transformers>=4.40)",
+            )
         from importlib import import_module
+
         self._tf = import_module("transformers")
         self._torch = import_module("torch")
         self._model = None
@@ -68,7 +71,8 @@ class HFAdapter(EngineAdapter):
     def _ensure_tokenizer(self):
         if self._tokenizer is None:
             self._tokenizer = self._tf.AutoTokenizer.from_pretrained(
-                self.model_id, trust_remote_code=bool(self.options.get("trust_remote_code", False)))
+                self.model_id, trust_remote_code=bool(self.options.get("trust_remote_code", False))
+            )
         return self._tokenizer
 
     # -- CacheProvider ──────────────────────────────────────────────────────
@@ -76,8 +80,8 @@ class HFAdapter(EngineAdapter):
         model = self._ensure_model()
         cfg = model.config
         pick = lambda *names, default=0: next(
-            (int(getattr(cfg, n, 0) or 0) for n in names if int(getattr(cfg, n, 0) or 0)),
-            default)
+            (int(getattr(cfg, n, 0) or 0) for n in names if int(getattr(cfg, n, 0) or 0)), default
+        )
         hidden = pick("hidden_size", "hidden_dim", "d_model")
         heads = pick("num_attention_heads", "num_heads", default=1)
         kv_heads = pick("num_key_value_heads", "num_kv_heads") or heads
@@ -90,14 +94,23 @@ class HFAdapter(EngineAdapter):
             kind = AttentionKind.MQA
         else:
             kind = AttentionKind.GQA
-        geometry = LayerGeometry(layers=layers, hidden_size=hidden, num_heads=heads,
-                               head_size=head_dim, num_key_value_heads=kv_heads,
-                               attention=kind, name=self.model_id)
-        return ModelSpec(id=self.model_id, geometry=geometry,
-                        family=str(getattr(cfg, "model_type", "unknown") or "unknown"),
-                        instruction_tuned=bool(self.options.get("instruction_tuned", True)),
-                        vocab_size=pick("vocab_size"), context_length=ctx)
-
+        geometry = LayerGeometry(
+            layers=layers,
+            hidden_size=hidden,
+            num_heads=heads,
+            head_size=head_dim,
+            num_key_value_heads=kv_heads,
+            attention=kind,
+            name=self.model_id,
+        )
+        return ModelSpec(
+            id=self.model_id,
+            geometry=geometry,
+            family=str(getattr(cfg, "model_type", "unknown") or "unknown"),
+            instruction_tuned=bool(self.options.get("instruction_tuned", True)),
+            vocab_size=pick("vocab_size"),
+            context_length=ctx,
+        )
 
     @classmethod
     def report_context(cls, model_id: str, **options) -> int | None:
@@ -105,12 +118,14 @@ class HFAdapter(EngineAdapter):
         if not available():
             return None
         from importlib import import_module
+
         tf = import_module("transformers")
         try:
             cfg = tf.AutoConfig.from_pretrained(
-                model_id, trust_remote_code=bool(options.get("trust_remote_code", False)))
+                model_id, trust_remote_code=bool(options.get("trust_remote_code", False))
+            )
         except Exception:
-            return None                                      # cannot say; never guess
+            return None  # cannot say; never guess
         ctx = int(getattr(cfg, "max_position_embeddings", 0) or 0)
         if not ctx:
             return None
@@ -120,6 +135,7 @@ class HFAdapter(EngineAdapter):
         except (TypeError, ValueError):
             factor = 1.0
         return int(ctx * factor) if factor >= 1 else ctx
+
     def capture(self, prompt_tokens):
         """Prefill and capture ``past_key_values`` as a LayeredCache."""
         model = self._ensure_model()
@@ -129,17 +145,19 @@ class HFAdapter(EngineAdapter):
         with self._torch.no_grad():
             out = model(input_ids=ids, use_cache=True, return_dict=True)
         past = getattr(out, "past_key_values", None)
-        if past is None:                                  # pre-cache API: degrade, document
+        if past is None:  # pre-cache API: degrade, document
             self._degraded = True
-            self.DEGRADED_REASON = ("this transformers version does not expose "
-                                   "past_key_values: prefill-only capture, fusion reduced "
-                                   "to the receiver's own cache")
+            self.DEGRADED_REASON = (
+                "this transformers version does not expose "
+                "past_key_values: prefill-only capture, fusion reduced "
+                "to the receiver's own cache"
+            )
             return LayeredCache([])
         slices = []
         for layer in past:
             key = getattr(layer, "key", None)
             value = getattr(layer, "value", None)
-            if key is None or value is None:              # legacy tuple-of-(k, v) layout
+            if key is None or value is None:  # legacy tuple-of-(k, v) layout
                 key, value = layer[0], layer[1]
             slices.append(LayerSlice(key.transpose(1, 2)[0], value.transpose(1, 2)[0]))
         return LayeredCache(slices)
@@ -154,15 +172,16 @@ class HFAdapter(EngineAdapter):
         ordered the way the models own updates are — [1, kv, tokens, width]."""
         geo = self.spec().geometry
         kv = max(geo.num_key_value_heads, 1)
+
         def batched(rows):
             t = self._torch.as_tensor(rows)
-            if t.ndim == 2:                                        # [tokens, kv_hidden]
+            if t.ndim == 2:  # [tokens, kv_hidden]
                 per = t.shape[1] // kv
                 if per * kv != t.shape[1]:
                     msg = "flattened cache row width must split evenly across the kv heads"
                     raise ValueError(msg)
-                view = t.reshape(t.shape[0], kv, per)               # [tokens, kv, width]
-            elif t.ndim == 3:                                       # [tokens, heads, head]
+                view = t.reshape(t.shape[0], kv, per)  # [tokens, kv, width]
+            elif t.ndim == 3:  # [tokens, heads, head]
                 if t.shape[1] != kv:
                     msg = "cache rows carry %d heads; the model stores %d per layer"
                     raise ValueError(msg % (t.shape[1], kv))
@@ -170,8 +189,9 @@ class HFAdapter(EngineAdapter):
             else:
                 msg = "cache rows must be [tokens, kv_hidden] or [tokens, heads, head]"
                 raise ValueError(msg)
-            view = view.transpose(0, 1)                             # [kv, tokens, width]
-            return view.unsqueeze(0).contiguous()                   # [1, kv, tokens, width]
+            view = view.transpose(0, 1)  # [kv, tokens, width]
+            return view.unsqueeze(0).contiguous()  # [1, kv, tokens, width]
+
         cache = self._tf.DynamicCache()
         for idx, sl in enumerate(layers):
             cache.update(batched(sl.key), batched(sl.value), idx)
@@ -202,8 +222,15 @@ class HFAdapter(EngineAdapter):
             out = model(input_ids=ids, **kwargs)
         return out.logits[0]
 
-    def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
-                 tools=None, stop=None):
+    def generate(
+        self,
+        prompt_tokens,
+        *,
+        max_new_tokens: int = 64,
+        temperature: float = 0.0,
+        tools=None,
+        stop=None,
+    ):
         model = self._ensure_model()
         ids = self._torch.as_tensor([list(prompt_tokens)], dtype=self._torch.long)
         if hasattr(model, "device"):
@@ -220,12 +247,12 @@ class HFAdapter(EngineAdapter):
             kwargs["past_key_values"] = self._install_cache(layers)
         with self._torch.no_grad():
             out = model.generate(input_ids=ids, **kwargs)
-        new = out[0][len(list(prompt_tokens)):]
+        new = out[0][len(list(prompt_tokens)) :]
         text = self._ensure_tokenizer().decode(new.tolist(), skip_special_tokens=True)
         if stop:
             for s in stop:
                 if s and s in text:
-                    text = text[:text.find(s)]
+                    text = text[: text.find(s)]
         return text
 
     # -- tokenizer protocol bits, we provide ────────────────────────────────

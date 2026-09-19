@@ -25,7 +25,7 @@ from ..types import LayeredCache
 
 __all__ = ["effective_rank", "rank_report", "RankReport"]
 
-_TINY = 1.1754944e-38   # torch.finfo(torch.float32).tiny, kept plain: no torch at import time
+_TINY = 1.1754944e-38  # torch.finfo(torch.float32).tiny, kept plain: no torch at import time
 
 
 def effective_rank(matrix) -> float:
@@ -37,6 +37,7 @@ def effective_rank(matrix) -> float:
     matrix has effective rank 0 (the empty set has rank 0, as it must).
     """
     import torch
+
     x = matrix if hasattr(matrix, "square") else torch.as_tensor(matrix, dtype=torch.float32)
     if x.numel() == 0:
         return 0.0
@@ -44,7 +45,7 @@ def effective_rank(matrix) -> float:
     if x.dim() == 1:
         x = x.reshape(1, -1)
     elif x.dim() != 2:
-        x = x.reshape(x.shape[0], -1)             # flatten trailing dims, keep rows
+        x = x.reshape(x.shape[0], -1)  # flatten trailing dims, keep rows
     # The singular values, of the principal angles, via the Gram matrix:
     # eigvalsh of AᵀA converges on exactly rank-deficient inputs, where
     # svdvals can stall (NaNs). svd remains the fallback, should the Gram
@@ -88,7 +89,7 @@ class RankReport:
         for kind, table in (("K", self.key), ("V", self.value)):
             b, a = table.get("before", 0.0), table.get("after", 0.0)
             arrow = "↑" if a > b else ("↓" if a < b else "=")
-            lines.append(f"  {kind}-cache: {b:0.1f} → {a:0.1f}  Δ {a-b:+0.1f} {arrow}")
+            lines.append(f"  {kind}-cache: {b:0.1f} → {a:0.1f}  Δ {a - b:+0.1f} {arrow}")
         lines.append(f"  layers with increased rank: {len(self.increased)}")
         return "\n".join(lines)
 
@@ -116,8 +117,9 @@ def rank_report(before: LayeredCache, after: LayeredCache) -> RankReport:
         raise ValueError(msg)
     increased: list[int] = []
     for n, (b, a) in enumerate(zip(before, after, strict=True)):
-        if effective_rank(a.key.reshape(-1, a.key.shape[-1])) > \
-           effective_rank(b.key.reshape(-1, b.key.shape[-1])):
+        if effective_rank(a.key.reshape(-1, a.key.shape[-1])) > effective_rank(
+            b.key.reshape(-1, b.key.shape[-1])
+        ):
             increased.append(n)
     key_before, key_after = _mean_rank(before, "key"), _mean_rank(after, "key")
     val_before, val_after = _mean_rank(before, "value"), _mean_rank(after, "value")

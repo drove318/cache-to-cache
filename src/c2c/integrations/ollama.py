@@ -33,7 +33,7 @@ _SPLIT = re.compile(r"\S+|\s+")
 
 
 def available() -> bool:
-    return True                                            # needs only an endpoint
+    return True  # needs only an endpoint
 
 
 class OllamaAdapter(EngineAdapter):
@@ -41,8 +41,10 @@ class OllamaAdapter(EngineAdapter):
 
     engine_name = "Ollama"
     required_extra = None
-    DEGRADATION = ("Ollama's wire protocol carries no cache: prefill-only capture; "
-                   "put the model behind c2c-serve for the full experience")
+    DEGRADATION = (
+        "Ollama's wire protocol carries no cache: prefill-only capture; "
+        "put the model behind c2c-serve for the full experience"
+    )
 
     def __init__(self, model_id: str, **options):
         super().__init__(model_id, **options)
@@ -59,7 +61,7 @@ class OllamaAdapter(EngineAdapter):
         for piece in _SPLIT.findall(text or ""):
             pid = self._piece_to_id.get(piece)
             if pid is None:
-                pid = len(self._piece_to_id) + 1           # ids start at one, like in BPE
+                pid = len(self._piece_to_id) + 1  # ids start at one, like in BPE
                 self._piece_to_id[piece] = pid
                 self._id_to_piece[pid] = piece
             ids.append(pid)
@@ -72,15 +74,19 @@ class OllamaAdapter(EngineAdapter):
     # -- HTTP plumbing ──────────────────────────────────────────────────────
     def _post(self, path: str, payload: dict) -> dict:
         request = urllib.request.Request(
-            self.base_url + path, data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST")
+            self.base_url + path,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8")
         except (urllib.error.URLError, OSError) as exc:
             raise AdapterNotSupported(
                 f"Ollama server at {self.base_url} unreachable",
-                hint="run `ollama serve`, or point --base-url at your server") from exc
+                hint="run `ollama serve`, or point --base-url at your server",
+            ) from exc
         try:
             return json.loads(body)
         except json.JSONDecodeError as exc:
@@ -95,10 +101,12 @@ class OllamaAdapter(EngineAdapter):
             arch = str(info["model_info"]["general"]["architecture"]) or "ollama"
         except (KeyError, TypeError):
             pass
-        return ModelSpec(id=self.model_id,
-                        geometry=LayerGeometry(layers=1, hidden_size=1, num_heads=1,
-                                            name=self.model_id),
-                        family=arch, instruction_tuned=True)
+        return ModelSpec(
+            id=self.model_id,
+            geometry=LayerGeometry(layers=1, hidden_size=1, num_heads=1, name=self.model_id),
+            family=arch,
+            instruction_tuned=True,
+        )
 
     def capture(self, prompt_tokens):
         """No cache crosses this wire; report the documented degradation."""
@@ -106,19 +114,28 @@ class OllamaAdapter(EngineAdapter):
         return LayeredCache([])
 
     def install(self, cache, prompt_tokens=None):
-        self._pending = None                               # nothing to install on HTTP
+        self._pending = None  # nothing to install on HTTP
 
-    def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
-                 tools=None, stop=None):
-        prompt = self.decode_tokens(prompt_tokens)          # the codec restores the string
+    def generate(
+        self,
+        prompt_tokens,
+        *,
+        max_new_tokens: int = 64,
+        temperature: float = 0.0,
+        tools=None,
+        stop=None,
+    ):
+        prompt = self.decode_tokens(prompt_tokens)  # the codec restores the string
         payload = {
             "model": self.model_id,
             "prompt": prompt,
             "raw": False,
             "stream": False,
-            "options": {"num_predict": int(max_new_tokens),
-                       "temperature": float(temperature or 0.0),
-                       **({"stop": list(stop)} if stop else {})},
+            "options": {
+                "num_predict": int(max_new_tokens),
+                "temperature": float(temperature or 0.0),
+                **({"stop": list(stop)} if stop else {}),
+            },
         }
         out = self._post("/api/generate", payload)
         return str(out.get("response", ""))

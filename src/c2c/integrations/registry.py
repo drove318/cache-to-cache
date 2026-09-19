@@ -99,7 +99,7 @@ class EngineAdapter:
             self._spec = self._build_spec()
         return self._spec
 
-    def _build_spec(self) -> ModelSpec:          # override in adapters
+    def _build_spec(self) -> ModelSpec:  # override in adapters
         msg = f"{type(self).__name__} does not implement _build_spec()"
         raise NotImplementedError(msg)
 
@@ -116,10 +116,12 @@ class EngineAdapter:
 
     def available_capabilities(self) -> list[str]:
         """What this adapter can do on this machine (for doctor, reports)."""
-        caps = ["capture" if hasattr(self, "capture") else "capture:missing",
-               "install" if hasattr(self, "install") else "install:missing",
-               "generate" if hasattr(self, "generate") else "generate:missing",
-               "score" if hasattr(self, "score") else "score:missing"]
+        caps = [
+            "capture" if hasattr(self, "capture") else "capture:missing",
+            "install" if hasattr(self, "install") else "install:missing",
+            "generate" if hasattr(self, "generate") else "generate:missing",
+            "score" if hasattr(self, "score") else "score:missing",
+        ]
         if self.DEGRADATION:
             caps.append(f"degraded:{self.DEGRADATION}")
         return caps
@@ -182,7 +184,7 @@ class _EngineRegistry:
             try:
                 for ep in importlib.metadata.entry_points(group=self.group):
                     found[ep.name] = f"{ep.value}"
-            except TypeError:                    # older importlib needs the kw split
+            except TypeError:  # older importlib needs the kw split
                 eps = importlib.metadata.entry_points()
                 for ep in eps.get(self.group, []):
                     found[ep.name] = str(ep.value)
@@ -200,7 +202,7 @@ class _EngineRegistry:
     def lookup(self, name: str) -> str:
         """Return the ``module:attribute`` string registered for *name*."""
         eps = self._entry_points()
-        if name in eps:                          # local (user) overrides
+        if name in eps:  # local (user) overrides
             return eps[name]
         try:
             return self._registry[name]
@@ -222,14 +224,17 @@ class _EngineRegistry:
         except ModuleNotFoundError as exc:
             hint = None
             if name != "reference":
-                hint = (f"the '{name}' adapter needs its engine installed "
-                      f"(pip install the matching extra) — or use --engine reference")
+                hint = (
+                    f"the '{name}' adapter needs its engine installed "
+                    f"(pip install the matching extra) — or use --engine reference"
+                )
             raise AdapterNotSupported(f"engine {name!r} unavailable: {exc}", hint=hint) from exc
         try:
             cls = getattr(module, attribute)
         except AttributeError as exc:
             raise AdapterNotSupported(
-                f"engine {name!r}: {target} does not export {attribute!r}") from exc
+                f"engine {name!r}: {target} does not export {attribute!r}"
+            ) from exc
         return cls(**options)
 
     # -- reporting ──────────────────────────────────────────────────────────
@@ -243,7 +248,7 @@ class _EngineRegistry:
                 cls = getattr(module, target.partition(":")[2])
                 mark = "degraded" if getattr(cls, "DEGRADATION", None) else "full"
                 lines.append(f"  {name:<12} {target:<52} [{mark}]")
-            except Exception as exc:                       # reports must not raise
+            except Exception as exc:  # reports must not raise
                 lines.append(f"  {name:<12} {target:<52} [unloaded: {exc.__class__.__name__}]")
         return lines
 

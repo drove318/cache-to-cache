@@ -22,6 +22,7 @@ from c2c.serve.openai_proxy import canonical_routes, create_server
 def hub():
     """A hub of one pair: the reference receiver and its sharer."""
     from c2c.serve.registry import ModelHub
+
     h = ModelHub(ServeConfig(api_key="test-key"))
     h.set_engine("reference")
     h.register_model("receiver-mini")
@@ -63,45 +64,50 @@ class TestModelGallery:
 
     def test_the_list_is_of_the_models(self, server):
         status, body = _request(f"{server}/v1/models", headers=AUTH)
-        assert status == 200                                       # all right, all models
+        assert status == 200  # all right, all models
         data = json.loads(body)
-        assert data["object"] == "list"                             # an object, of a list
+        assert data["object"] == "list"  # an object, of a list
         ids = [entry["id"].removeprefix("c2c/") for entry in data["data"]]
-        assert "receiver-mini" in ids and "sharer-mini" in ids      # the pair, on display
-        assert any("←" in model for model in ids)                  # the fused, as one
+        assert "receiver-mini" in ids and "sharer-mini" in ids  # the pair, on display
+        assert any("←" in model for model in ids)  # the fused, as one
         for entry in data["data"]:
             assert entry["object"] == "model"
-            assert isinstance(entry["created"], int)                # created, stamped
+            assert isinstance(entry["created"], int)  # created, stamped
 
     def test_health_of_the_server(self, server):
         """GET /healthz — no auth, no fuss, all fine."""
         status, body = _request(f"{server}/healthz")
         assert status == 200
-        assert json.loads(body)["status"] == "ok"                   # the heart, beating
+        assert json.loads(body)["status"] == "ok"  # the heart, beating
 
     def test_the_well_known_agent_card(self, server):
         """GET /.well-known/agent-card.json — the card, of the agent."""
         status, body = _request(f"{server}/.well-known/agent-card.json")
         assert status == 200
         card = json.loads(body)
-        assert "name" in card and "capabilities" in card           # identity, on the card
-        assert card["capabilities"]["streaming"] is True            # streaming, promised
+        assert "name" in card and "capabilities" in card  # identity, on the card
+        assert card["capabilities"]["streaming"] is True  # streaming, promised
 
 
 class TestChatCompletions:
     """POST /v1/chat/completions — the messages, in and out."""
 
     def test_creates_a_completion(self, server):
-        status, body = _request(f"{server}/v1/chat/completions", method="POST",
-                           headers=AUTH, payload={
-                               "model": "receiver-mini",
-                               "messages": [{"role": "user", "content": "hello"}],
-                               "max_tokens": 6})
+        status, body = _request(
+            f"{server}/v1/chat/completions",
+            method="POST",
+            headers=AUTH,
+            payload={
+                "model": "receiver-mini",
+                "messages": [{"role": "user", "content": "hello"}],
+                "max_tokens": 6,
+            },
+        )
         assert status == 200
         data = json.loads(body)
-        assert data["object"] == "chat.completion"                  # the type, as issued
-        assert len(data["choices"]) == 1                            # one choice, greedy
-        assert "content" in data["choices"][0]["message"]          # the message, replied
+        assert data["object"] == "chat.completion"  # the type, as issued
+        assert len(data["choices"]) == 1  # one choice, greedy
+        assert "content" in data["choices"][0]["message"]  # the message, replied
         assert data["choices"][0]["finish_reason"] in ("stop", "length")
         usage = data["usage"]
         assert usage["prompt_tokens"] >= 0 and usage["completion_tokens"] >= 0
@@ -109,51 +115,63 @@ class TestChatCompletions:
 
     def test_the_legacy_completions_route(self, server):
         """POST /v1/completions — the old wire, still singing."""
-        status, body = _request(f"{server}/v1/completions", method="POST",
-                           headers=AUTH, payload={
-                               "model": "receiver-mini", "prompt": "count to five",
-                               "max_tokens": 5})
+        status, body = _request(
+            f"{server}/v1/completions",
+            method="POST",
+            headers=AUTH,
+            payload={"model": "receiver-mini", "prompt": "count to five", "max_tokens": 5},
+        )
         assert status == 200
         data = json.loads(body)
         assert data["object"] == "text.completion"
-        assert "text" in data["choices"][0]                         # the text, plain
+        assert "text" in data["choices"][0]  # the text, plain
 
     def test_streaming_in_sse(self, server):
         """The stream: data: chunks … and the DONE, at the end."""
-        payload = {"model": "receiver-mini", "messages": [{"role": "user", "content": "go"}],
-                 "stream": True, "max_tokens": 4}
-        request = urllib.request.Request(f"{server}/v1/chat/completions",
-                                   data=json.dumps(payload).encode("utf-8"),
-                                   method="POST", headers={**AUTH,
-                                       "Content-Type": "application/json"})
+        payload = {
+            "model": "receiver-mini",
+            "messages": [{"role": "user", "content": "go"}],
+            "stream": True,
+            "max_tokens": 4,
+        }
+        request = urllib.request.Request(
+            f"{server}/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={**AUTH, "Content-Type": "application/json"},
+        )
         with urllib.request.urlopen(request, timeout=20) as response:
             assert response.headers["Content-Type"].startswith("text/event-stream")
             raw = response.read().decode("utf-8")
         events = [line for line in raw.splitlines() if line.startswith("data: ")]
         assert events, "a stream, with no events"
-        assert events[-1] == "data: [DONE]"                        # the terminator, verbatim
+        assert events[-1] == "data: [DONE]"  # the terminator, verbatim
         first = json.loads(events[0].removeprefix("data: "))
-        assert first["object"] == "chat.completion.chunk"          # chunks, of a completion
+        assert first["object"] == "chat.completion.chunk"  # chunks, of a completion
 
 
 class TestAuthentication:
     """The gate: a Bearer key, or a 401 with a clear reason."""
 
     def test_no_key_no_entry(self, server):
-        status, body = _request(f"{server}/v1/chat/completions", method="POST",
-                           payload={"model": "receiver-mini",
-                                  "messages": [{"role": "user", "content": "x"}]})
-        assert status == 401                                        # unauthorised, plain
+        status, body = _request(
+            f"{server}/v1/chat/completions",
+            method="POST",
+            payload={"model": "receiver-mini", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert status == 401  # unauthorised, plain
         error = json.loads(body)["error"]
-        assert error["type"] == "authentication_error"              # the kind, named
-        assert "key" in error["message"].lower()                    # the reason, given
+        assert error["type"] == "authentication_error"  # the kind, named
+        assert "key" in error["message"].lower()  # the reason, given
 
     def test_the_wrong_key_is_the_wrong_key(self, server):
-        status, body = _request(f"{server}/v1/chat/completions", method="POST",
-                           headers={"Authorization": "Bearer nope"}, payload={
-                               "model": "receiver-mini",
-                               "messages": [{"role": "user", "content": "x"}]})
-        assert status == 401                                        # denied, again
+        status, body = _request(
+            f"{server}/v1/chat/completions",
+            method="POST",
+            headers={"Authorization": "Bearer nope"},
+            payload={"model": "receiver-mini", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert status == 401  # denied, again
 
 
 class TestErrors:
@@ -161,31 +179,36 @@ class TestErrors:
 
     def test_no_such_model(self, server):
         """The model, missing: a 404, or 400, with an error object."""
-        status, body = _request(f"{server}/v1/chat/completions", method="POST",
-                           headers=AUTH, payload={
-                               "model": "no-such-model",
-                               "messages": [{"role": "user", "content": "x"}]})
-        assert status in (400, 404)                                 # absent, announced
+        status, body = _request(
+            f"{server}/v1/chat/completions",
+            method="POST",
+            headers=AUTH,
+            payload={"model": "no-such-model", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert status in (400, 404)  # absent, announced
         error = json.loads(body)["error"]
-        assert error["code"] == "model_not_found"                   # the code, as documented
-        assert error["param"] == "model"                             # the parameter, blamed
+        assert error["code"] == "model_not_found"  # the code, as documented
+        assert error["param"] == "model"  # the parameter, blamed
 
     def test_malformed_json_is_a_client_error(self, server):
-        request = urllib.request.Request(f"{server}/v1/completions", data=b"{not json",
-                                   method="POST", headers={**AUTH,
-                                       "Content-Type": "application/json"})
+        request = urllib.request.Request(
+            f"{server}/v1/completions",
+            data=b"{not json",
+            method="POST",
+            headers={**AUTH, "Content-Type": "application/json"},
+        )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
                 status = response.status
         except urllib.error.HTTPError as exc:
             status = exc.code
-        assert status == 400                                         # bad request, good body
+        assert status == 400  # bad request, good body
 
     def test_options_gives_cors_headers(self, server):
         """The preflight, answered."""
         status, body = _request(f"{server}/v1/chat/completions", method="OPTIONS")
-        assert status in (200, 204)                                 # the door, open
-        assert status != 500                                        # the server, awake
+        assert status in (200, 204)  # the door, open
+        assert status != 500  # the server, awake
 
 
 class TestCanonicalRoutes:
@@ -197,11 +220,13 @@ class TestCanonicalRoutes:
         assert "/v1/models" in routes
         assert "/v1/chat/completions" in routes
         assert "/v1/completions" in routes
-        assert all(route.startswith("/v1/") or route in
-                ("/healthz", "/.well-known/agent-card.json") for route in routes)
+        assert all(
+            route.startswith("/v1/") or route in ("/healthz", "/.well-known/agent-card.json")
+            for route in routes
+        )
 
     def test_the_pipes_of_the_proxy(self, server):
         """Each canonical route, exercised end to end: a status, not a crash."""
         for route, method in (("/v1/models", "GET"), ("/healthz", "GET")):
             status, _ = _request(server + route, method=method, headers=AUTH)
-            assert status == 200, f"{method} {route} → {status}"    # the pipe, intact
+            assert status == 200, f"{method} {route} → {status}"  # the pipe, intact
