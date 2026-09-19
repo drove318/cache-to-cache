@@ -280,6 +280,42 @@ class ChatPipeline:
                     f"[{time.strftime('%H:%M:%S', time.localtime())}] [c2c-serve] gate=block: "
                     f"the cache of {blocked!r} is refused for this query; the receiver answers alone\n"
                 )
+        fraction = c2c_options.get("blend_fraction")
+        if fraction is not None:
+            try:
+                probe = float(fraction)
+            except (TypeError, ValueError) as exc:
+                raise HttpProblem(
+                    HTTPStatus.BAD_REQUEST,
+                    f"blend_fraction {fraction!r} is not a number (0..1, or a percent 0..100)",
+                    err_type="invalid_request_error",
+                    code="invalid_c2c_options",
+                    param="c2c.blend_fraction",
+                ) from exc
+            if not 0.0 <= probe <= 100.0:
+                raise HttpProblem(
+                    HTTPStatus.BAD_REQUEST,
+                    f"blend_fraction {probe} is out of range (0..1, or a percent 0..100)",
+                    err_type="invalid_request_error",
+                    code="invalid_c2c_options",
+                    param="c2c.blend_fraction",
+                )
+        direction = c2c_options.get("blend_direction")
+        if direction is not None:
+            from ..types import BlendDirection
+
+            if not isinstance(direction, BlendDirection):
+                try:
+                    BlendDirection(str(direction).strip().lower())
+                except ValueError as exc:
+                    names = ", ".join(repr(e.value) for e in BlendDirection)
+                    raise HttpProblem(
+                        HTTPStatus.BAD_REQUEST,
+                        f"blend_direction {direction!r} is not a direction; the known, {names}",
+                        err_type="invalid_request_error",
+                        code="invalid_c2c_options",
+                        param="c2c.blend_direction",
+                    ) from exc
         if (
             not sealed
             and blocked is None
