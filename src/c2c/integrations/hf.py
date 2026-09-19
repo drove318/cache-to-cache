@@ -76,12 +76,15 @@ class HFAdapter(EngineAdapter):
     def _build_spec(self) -> ModelSpec:
         model = self._ensure_model()
         cfg = model.config
-        heads = int(getattr(cfg, "num_attention_heads", 0) or getattr(cfg, "num_heads", 0) or 1)
-        hidden = int(getattr(cfg, "hidden_size", 0) or getattr(cfg, "hidden_dim", 0) or 0)
-        kv_heads = int(getattr(cfg, "num_key_value_heads", 0)
-                     or getattr(cfg, "num_kv_heads", 0) or heads)
-        head_dim = int(getattr(cfg, "head_dim", 0) or (hidden // max(heads, 1)))
-        layers = int(getattr(cfg, "num_hidden_layers", 0) or 1)
+        pick = lambda *names, default=0: next(
+            (int(getattr(cfg, n, 0) or 0) for n in names if int(getattr(cfg, n, 0) or 0)),
+            default)
+        hidden = pick("hidden_size", "hidden_dim", "d_model")
+        heads = pick("num_attention_heads", "num_heads", default=1)
+        kv_heads = pick("num_key_value_heads", "num_kv_heads") or heads
+        head_dim = pick("head_dim") or (hidden // max(heads, 1))
+        layers = pick("num_hidden_layers", default=1)
+        ctx = pick("max_position_embeddings")
         if kv_heads == heads:
             kind = AttentionKind.MHA
         elif kv_heads == 1:
@@ -94,8 +97,30 @@ class HFAdapter(EngineAdapter):
         return ModelSpec(id=self.model_id, geometry=geometry,
                         family=str(getattr(cfg, "model_type", "unknown") or "unknown"),
                         instruction_tuned=bool(self.options.get("instruction_tuned", True)),
-                        vocab_size=int(getattr(cfg, "vocab_size", 0) or 0))
+                        vocab_size=pick("vocab_size"), context_length=ctx)
 
+
+    @classmethod
+    def report_context(cls, model_id: str, **options) -> int | None:
+        """``AutoConfig`` only: the card's ``max_position_embeddings``, rope-scaled."""
+        if not available():
+            return None
+        from importlib import import_module
+        tf = import_module("transformers")
+        try:
+            cfg = tf.AutoConfig.from_pretrained(
+                model_id, trust_remote_code=bool(options.get("trust_remote_code", False)))
+        except Exception:
+            return None                                      # cannot say; never guess
+        ctx = int(getattr(cfg, "max_position_embeddings", 0) or 0)
+        if not ctx:
+            return None
+        factor = getattr(getattr(cfg, "rope_scaling", None), "factor", None)
+        try:
+            factor = float(factor) if factor else 1.0
+        except (TypeError, ValueError):
+            factor = 1.0
+        return int(ctx * factor) if factor >= 1 else ctx
     def capture(self, prompt_tokens):
         """Prefill and capture ``past_key_values`` as a LayeredCache."""
         model = self._ensure_model()
@@ -117,7 +142,7 @@ class HFAdapter(EngineAdapter):
             value = getattr(layer, "value", None)
             if key is None or value is None:              # legacy tuple-of-(k, v) layout
                 key, value = layer[0], layer[1]
-            slices.append(LayerSlice(key[0], value[0]))   # batch size is one; drop it
+            slices.append(LayerSlice(key.transpose(1, 2)[0], value.transpose(1, 2)[0]))
         return LayeredCache(slices)
 
     # -- CacheInjector ──────────────────────────────────────────────────────
@@ -125,14 +150,57 @@ class HFAdapter(EngineAdapter):
         """Remember the cache to be installed at the next generation."""
         self._pending = (cache, list(prompt_tokens) if prompt_tokens is not None else None)
 
+    def _install_cache(self, layers):
+        """Build the libraries DynamicCache from installed rows, batch/heads
+        ordered the way the models own updates are — [1, kv, tokens, width]."""
+        geo = self.spec().geometry
+        kv = max(geo.num_key_value_heads, 1)
+        def batched(rows):
+            t = self._torch.as_tensor(rows)
+            if t.ndim == 2:                                        # [tokens, kv_hidden]
+                per = t.shape[1] // kv
+                if per * kv != t.shape[1]:
+                    msg = "flattened cache row width must split evenly across the kv heads"
+                    raise ValueError(msg)
+                view = t.reshape(t.shape[0], kv, per)               # [tokens, kv, width]
+            elif t.ndim == 3:                                       # [tokens, heads, head]
+                if t.shape[1] != kv:
+                    msg = "cache rows carry %d heads; the model stores %d per layer"
+                    raise ValueError(msg % (t.shape[1], kv))
+                view = t
+            else:
+                msg = "cache rows must be [tokens, kv_hidden] or [tokens, heads, head]"
+                raise ValueError(msg)
+            view = view.transpose(0, 1)                             # [kv, tokens, width]
+            return view.unsqueeze(0).contiguous()                   # [1, kv, tokens, width]
+        cache = self._tf.DynamicCache()
+        for idx, sl in enumerate(layers):
+            cache.update(batched(sl.key), batched(sl.value), idx)
+        return cache
+
+    def _installed(self):
+        pending = getattr(self, "_pending", None)
+        if pending is not None and isinstance(pending[0], LayeredCache) and len(pending[0]):
+            return pending[0]
+        return None
+
     def score(self, token_ids):
-        """Teacher-forced logits, rows aligned to predict ``token_ids[t+1]``."""
+        """Teacher-forced logits, rows aligned to predict ``token_ids[t+1]``.
+
+        When a fused cache is installed the forward runs grad-enabled: the
+        frozen weights demand nothing, but gradients must still reach the
+        injected rows — that path is the entire training signal."""
         model = self._ensure_model()
         ids = self._torch.as_tensor([list(token_ids)], dtype=self._torch.long)
         if hasattr(model, "device"):
             ids = ids.to(model.device)
-        with self._torch.no_grad():
-            out = model(input_ids=ids)
+        layers = self._installed()
+        kwargs = {"past_key_values": self._install_cache(layers)} if layers is not None else {}
+        if layers is None:
+            with self._torch.no_grad():
+                out = model(input_ids=ids, **kwargs)
+        else:
+            out = model(input_ids=ids, **kwargs)
         return out.logits[0]
 
     def generate(self, prompt_tokens, *, max_new_tokens: int = 64, temperature: float = 0.0,
@@ -148,10 +216,9 @@ class HFAdapter(EngineAdapter):
         }
         if kwargs["do_sample"]:
             kwargs["temperature"] = float(temperature)
-        pending = getattr(self, "_pending", None)
-        if pending is not None and isinstance(pending[0], LayeredCache) and len(pending[0]):
-            kwargs["past_key_values"] = tuple(
-                (sl.key[None], sl.value[None]) for sl in pending[0])
+        layers = self._installed()
+        if layers is not None:
+            kwargs["past_key_values"] = self._install_cache(layers)
         with self._torch.no_grad():
             out = model.generate(input_ids=ids, **kwargs)
         new = out[0][len(list(prompt_tokens)):]

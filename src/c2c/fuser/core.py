@@ -48,10 +48,11 @@ def _slice(rows: Tensor, geometry: LayerGeometry) -> LayerSlice:
     """Split an [n, d] joint view back into key/value cache slices."""
     kv = geometry.kv_hidden_size
     key, value = rows.split(kv, dim=-1)
-    if geometry.num_heads > 1 and key.dim() == 2 and key.shape[-1] % geometry.num_heads == 0:
+    kv_heads = geometry.num_key_value_heads
+    if kv_heads > 1 and key.dim() == 2 and key.shape[-1] % (kv_heads * geometry.head_size) == 0:
         n = key.shape[0]
-        key = key.reshape(n, geometry.num_heads, geometry.head_size)
-        value = value.reshape(n, geometry.num_key_value_heads, geometry.head_size)
+        key = key.reshape(n, kv_heads, geometry.head_size)
+        value = value.reshape(n, kv_heads, geometry.head_size)
     return LayerSlice(key, value)
 
 

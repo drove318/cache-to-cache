@@ -103,6 +103,17 @@ class EngineAdapter:
         msg = f"{type(self).__name__} does not implement _build_spec()"
         raise NotImplementedError(msg)
 
+    @classmethod
+    def report_context(cls, model_id: str, **options) -> int | None:
+        """Tokens the model's own card claims, read without loading weights.
+
+        ``/v1/models`` uses this so a harness sizes its context from the
+        served model's truth, not from a number baked into documentation.
+        Adapters override where the engine exposes a cheap config read;
+        ``None`` means "this engine cannot say", and the listing omits it.
+        """
+        return None
+
     def available_capabilities(self) -> list[str]:
         """What this adapter can do on this machine (for doctor, reports)."""
         caps = ["capture" if hasattr(self, "capture") else "capture:missing",

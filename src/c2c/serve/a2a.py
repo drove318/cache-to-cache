@@ -64,7 +64,7 @@ def build_agent_card(config: ServeConfig | None = None, hub=None) -> dict:
     base = f"{scheme}://{cfg.host}:{cfg.port}"
     models = []
     try:
-        models = [mid for mid, _note in hub.describe_models()]
+        models = [mid for mid, _note, _ctx in hub.describe_models()]
     except Exception:                                        # noqa: cards must print, never raise
         pass
     return {

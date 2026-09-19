@@ -360,11 +360,13 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                           "version": __version__, "routes": canonical_routes()})
             elif path in (ROUTE_MODELS, "/" + MODELS):
                 data = []
-                for mid, note in self.pipeline.hub.describe_models():
+                for mid, note, ctx in self.pipeline.hub.describe_models():
                     item = {"id": mid, "object": "model", "created": int(time.time()),
                           "owned_by": "c2c"}
                     if note:
                         item["description"] = note
+                    if ctx:
+                        item["max_context_tokens"] = int(ctx)
                     data.append(item)
                 self._json({"object": "list", "data": data})
             elif path == ROUTE_WELL_KNOWN:
@@ -560,6 +562,15 @@ def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
                     + style(f"{scheme}://{cfg.host}:{cfg.port}", "bold") + "\n")
     for route in canonical_routes():
         sys.stderr.write(f"    * {route}\n")
+    try:
+        _pipe = OpenAIRequestHandler.pipeline
+        _claims = [(_mid, _ctx) for _mid, _note, _ctx
+                   in (_pipe.hub.describe_models() if _pipe else []) if _ctx]
+    except Exception:                                      # noqa: a banner never blocks a boot
+        _claims = []
+    for _mid, _ctx in _claims:
+        sys.stderr.write(f"    * {_mid} — answers within {_ctx} tokens, "
+                       "the model's own claim\n")
     sys.stderr.write("  the harness stays the master; C2C is the wire between models.\n")
     try:
         server_obj.serve_forever()

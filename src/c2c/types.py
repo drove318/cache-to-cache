@@ -319,6 +319,7 @@ class ModelSpec:
     instruction_tuned: bool = True   # base vs. instruct (paper Table 4 uses Base)
     vocab_file: str | None = None    # tokenizer vocabulary, if persisted
     vocab_size: int = 0            # pieces of the tokenizer, on the card
+    context_length: int = 0        # tokens the model itself claims; 0 = unknown
 
     def __str__(self):
         tuned = "instruct" if self.instruction_tuned else "base"

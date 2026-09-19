@@ -95,3 +95,14 @@ branch = true
 
 [tool.coverage.report]
 exclude-lines = ['pragma: no cover', "raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "N", "UP", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/**" = ["E731"]
+"tests/**" = ["N802", "N803", "E731"]

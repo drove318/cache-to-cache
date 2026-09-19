@@ -1,5 +1,5 @@
-{"instruction": "What is two plus two?", "input": "", "output": "four"}
-{"instruction": "Capital of France?", "input": "", "output": "Paris"}
-{"instruction": "Square root of 81?", "input": "", "output": "nine"}
-{"instruction": "Largest planet?", "input": "", "output": "Jupiter"}
-{"instruction": "Boiling point of water, in degrees Celsius?", "input": "", "output": "one hundred"}
+{"instruction": "What is two plus two?", "input": "", "output": "the answer is four"}
+{"instruction": "Capital of France?", "input": "", "output": "the answer is Paris"}
+{"instruction": "Square root of 81?", "input": "", "output": "the answer is nine"}
+{"instruction": "Largest planet?", "input": "", "output": "the answer is Jupiter"}
+{"instruction": "Boiling point of water, in degrees Celsius?", "input": "", "output": "the answer is one hundred"}

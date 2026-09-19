@@ -504,6 +504,12 @@ class ReferenceAdapter(EngineAdapter):
     def _build_spec(self) -> ModelSpec:
         return self.engine.spec()
 
+    @classmethod
+    def report_context(cls, model_id: str, **options) -> int | None:
+        """What the toy's own card claims: the reference config's context."""
+        cfg = ReferenceConfig(name=str(model_id), seed=int(options.get("seed", 42)))
+        return int(getattr(cfg, "max_seq_length", 0) or 0) or None
+
     def capture(self, prompt_tokens):
         return self.engine.capture(prompt_tokens)
 

@@ -98,7 +98,8 @@ class ModelHub:
         with self._lock:
             self._models[key] = {
                 "id": key,
-                "provider": provider, "injector": injector,
+                "identity": model_id,                    # build on what was given, not its
+                "provider": provider, "injector": injector,    # lowercased twin
                 "options": dict(options or {}), "note": note,
             }
 
@@ -110,9 +111,10 @@ class ModelHub:
                    fuser=fuser, aligner=aligner, note=note)
         with self._lock:
             self._pairs[pair.id] = pair
-            for side in (pair.receiver, pair.sharer):     # a pair implies its two sides
-                if side not in self._models:              # register both, read: one
+            for side, origin in ((pair.receiver, receiver), (pair.sharer, sharer)):
+                if side not in self._models:             # a pair implies its two sides
                     self._models[side] = {"id": side, "provider": None, "injector": None,
+                                        "identity": origin,           # the path as handed over
                                         "options": {}, "note": "side of a pair"}
         return pair
 
@@ -161,21 +163,40 @@ class ModelHub:
             pairs = sorted(self._pairs)
         return [f"{self.config.model_prefix}{p}" for p in (*singles, *pairs)]
 
-    def describe_models(self) -> list[tuple[str, str]]:
-        """(id, description) pairs for the /v1/models listing."""
-        out: list[tuple[str, str]] = []
+    def describe_models(self) -> list[tuple[str, str, int | None]]:
+        """(id, description, claimed-context) for the /v1/models listing.
+
+        The third slot is what the model's own card says about its window,
+        learned without weights; ``None`` when the engine cannot say.
+        """
+        out: list[tuple[str, str, int | None]] = []
         with self._lock:
             for mid in sorted(self._models):
                 note = self._models[mid].get("note") or "single model (relay)"
-                out.append((f"{self.config.model_prefix}{mid}", str(note)))
+                out.append((f"{self.config.model_prefix}{mid}", str(note),
+                           self._context_of(mid)))
             for pid in sorted(self._pairs):
                 pair = self._pairs[pid]
                 mode = "cache-to-cache" if pair.fused else "relay"
                 note = f"{mode}: {pair.receiver} receives, {pair.sharer} shares"
                 if pair.note:
                     note += f" ({pair.note})"
-                out.append((f"{self.config.model_prefix}{pid}", note))
+                out.append((f"{self.config.model_prefix}{pid}", note,
+                           self._context_of(pair.receiver)))
         return out
+
+    def _context_of(self, model_id: str) -> int | None:
+        """The receiving model's claimed window; None on any silence."""
+        try:
+            from ..integrations.registry import engines
+            target = engines.lookup(self.engine_name)
+            module_name, _, attribute = target.partition(":")
+            import importlib
+            cls = getattr(importlib.import_module(module_name), attribute)
+            return cls.report_context(model_id, **(self._models.get(model_id, {})
+                                                 .get("options") or {}))
+        except Exception:
+            return None
 
     def resolve(self, model_id: str) -> ResolvedTarget | None:
         """Resolve a model id through the hub, building parts as needed.
@@ -231,7 +252,7 @@ class ModelHub:
         provider = entry.get("provider")
         injector = entry.get("injector")
         if provider is None and injector is None:
-            built = self._build(model_id, entry.get("options") or {})
+            built = self._build(entry.get("identity") or model_id, entry.get("options") or {})
             if built is not None:
                 provider = injector = built
                 entry["provider"], entry["injector"] = provider, injector
