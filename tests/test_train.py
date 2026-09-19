@@ -181,6 +181,40 @@ class TestTrainingLoop:
             after = trainer.fuser.state_dict()
             assert all(torch.equal(after[k], v) for k, v in before.items()), name
 
+    def test_untrusted_checkpoints_are_refused_not_executed(self, tmp_path):
+        """A download from outside the zoo is an adversary, not a colleague.
+
+        The reader dispatches on the magic bytes and both doors it meets are
+        barred: a raw pickle never reaches a deserialiser, and a forged torch
+        zip may not smuggle an unknown global past the weights-only whitelist.
+        The sentinel proves the payload never ran. The house checkpoint, with
+        its allowlisted enums, still loads — the guard bars, it does not
+        confiscate.
+        """
+        import pickle
+
+        from safetensors import SafetensorError
+
+        from c2c.train.scheme import load_checkpoint_blob
+
+        sentinel = str(tmp_path / "pwned")
+
+        class _Evil:
+            def __reduce__(self):
+                return (os.system, (f"touch {sentinel!r}",))
+
+        raw = str(tmp_path / "raw.pt")
+        with open(raw, "wb") as fh:
+            pickle.dump({"state_dict": {"w": _Evil()}}, fh)
+        forged = str(tmp_path / "forged.pt")
+        torch.save({"format": "c2c-fuser-checkpoint-v1", "evil": _Evil()}, forged)
+        with pytest.raises(SafetensorError):
+            load_checkpoint_blob(raw)  # not a container: header too large, too wild
+        with pytest.raises(Exception) as refusal:  # torch keeps this one off the public surface
+            load_checkpoint_blob(forged)  # unknown global: the whitelist holds
+        assert "weights_only" in str(refusal.value)  # the refusal names its own reason
+        assert not os.path.isfile(sentinel)  # errors should never be silent, but these were
+
     def test_no_frozen_all_checkpoint_resume(self, tiny_dataset):
         """Save, load, resume: the state of the fuser, in a file."""
         trainer = make_trainer(total_steps=4)

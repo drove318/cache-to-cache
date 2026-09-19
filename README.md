@@ -72,6 +72,22 @@ The answer of the fusion prints, and the report of the fuser tells: per-layer
 gates, injection order, blend fractions — the numbers of the paper, on your
 terminal.
 
+The miniature pair is plumbing: deterministic reference nets, no weights, no
+downloads — four commands that prove the whole wire on any machine. Real
+pairs ride the same two commands with `-e hf`, on any Hugging-Face-format
+folders the machine can reach (`pip install "c2c-cache[hf]"` first):
+
+```bash
+c2c train -d data/your-instructions.jsonl \
+       --receiver Qwen/Qwen2.5-0.5B-Instruct --sharer Qwen/Qwen2.5-Math-1.5B \
+       -e hf --epochs 1 -o checkpoints/math-to-small.safetensors
+c2c-serve --pair Qwen/Qwen2.5-0.5B-Instruct+Qwen/Qwen2.5-Math-1.5B:checkpoints/math-to-small.safetensors
+```
+
+Point any OpenAI client at `http://127.0.0.1:8788/v1`, name the pair in
+`model=`, and the answer arrives from the receivers mouth, informed by the
+sharers cache — the paper's Table 4, on your hardware.
+
 ## Use, anywhere; wire between models
 
 The same wire, every harness. Start the front (`c2c-serve

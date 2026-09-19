@@ -56,6 +56,14 @@ viz = ["matplotlib>=3.7"]
 crypto = ["cryptography>=41"]              # EX-5 privacy mode: AES-GCM on the wire
 dev = ["pytest>=7.4", "pytest-timeout>=2.1"]
 
+# the engines, one extra each; every extra, the name the adapters hint prints,
+# the version floored by what the index actually distributes (verified 2026-09-18).
+hf = ["transformers>=4.40"]               # HF Transformers: the reference in the reference engines
+vllm = ["vllm>=0.4"]                    # the PagedAttention server, with a cache hook to yield
+sglang = ["sglang>=0.4"]                 # the serving runtime, structurally generated
+trtllm = ["tensorrt-llm"]               # or follow the engines container images, as you prefer
+mlx = ["mlx", "mlx-lm"]                  # on an Apple Silicon mac, in the mlx-lm home
+llama-cpp = ["llama-cpp-python>=0.3"]   # the bindings, built, you run, on any hardware
 [project.scripts]
 # Control-plane only (spec HL-4): deliberately NO `c2c run-agent` —
 # the harness stays the master; C2C is the wire between models.
