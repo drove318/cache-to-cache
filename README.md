@@ -64,7 +64,8 @@ c2c doctor                                   # the checkup, printed
 c2c fuse --receiver receiver-mini --sharer sharer-mini \
        -e reference --prompt "what is two plus two" --answer --report
 c2c train -d fixtures/datasets/tiny.jsonl \
-       --receiver receiver-mini --sharer sharer-mini -e reference --verbose
+       --receiver receiver-mini --sharer sharer-mini -e reference --epochs 1 \
+       -o checkpoints/toy-fuser.safetensors
 c2c eval --table 4 --verbose                 # the paper's Tables 3–8, as far as CI can see
 ```
 
@@ -79,26 +80,29 @@ folders the machine can reach (`pip install "c2c-cache[hf]"` first):
 
 ```bash
 c2c train -d data/your-instructions.jsonl \
-       --receiver Qwen/Qwen2.5-0.5B-Instruct --sharer Qwen/Qwen2.5-Math-1.5B \
+       --receiver Qwen/Qwen3-0.6B --sharer Qwen/Qwen2.5-Math-1.5B \
        -e hf --epochs 1 -o checkpoints/math-to-small.safetensors
-c2c-serve --pair Qwen/Qwen2.5-0.5B-Instruct+Qwen/Qwen2.5-Math-1.5B:checkpoints/math-to-small.safetensors
+c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:checkpoints/math-to-small.safetensors
 ```
 
 Point any OpenAI client at `http://127.0.0.1:8788/v1`, name the pair in
-`model=`, and the answer arrives from the receivers mouth, informed by the
-sharers cache — the paper's Table 4, on your hardware.
+`model=` (the gallery at `/v1/models` prints the exact strings), and the
+answer arrives from the receivers mouth, informed by the sharers cache —
+a row of the paper's Table 4, the heterogeneous pair, on your hardware.
 
 ## Use, anywhere; wire between models
 
-The same wire, every harness. Start the front (`c2c-serve
---pair receiver-mini+sharer-mini`), point a client at the served
-front — an OpenAI-compatible endpoint — and the models speak cache-to-cache:
+The same wire, every harness. Start the front with the fuser you just
+trained (`c2c-serve --pair receiver-mini+sharer-mini:checkpoints/toy-fuser.safetensors`),
+point a client at the served front — an OpenAI-compatible endpoint — and the
+models speak cache-to-cache; ask the gallery (`/v1/models`) for the exact
+name of the pair, and of every single model the front will build on demand:
 
 ```python
 import os
 from openai import OpenAI                       # any client, any harness, any model
 client = OpenAI(base_url="http://127.0.0.1:8788/v1",
-                api_key=os.environ["C2C_API_KEY"])
+                api_key=os.environ.get("C2C_API_KEY", "not-needed-on-loopback"))
 answer = client.chat.completions.create(
     model="c2c/receiver-mini+sharer-mini",
     messages=[{"role": "user", "content": "two plus two?"}])

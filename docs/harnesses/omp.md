@@ -38,21 +38,35 @@ then asks omp itself to confirm:
 
 ```bash
 python3 - <<'EOF'
-import os, shutil
+import json, os, shutil, urllib.error, urllib.request
+base = os.environ.get("C2C_BASE", "http://127.0.0.1:8788/v1")
+try:                                          # the numbers, from the live front
+    with urllib.request.urlopen(base + "/models", timeout=5) as response:
+        gallery = json.load(response)["data"]
+except OSError:
+    print("the front does not answer at", base)
+    print("start it first — the command of section 1, or simply:")
+    print("  c2c-serve --pair receiver-mini+sharer-mini")
+    raise SystemExit(2)
+if not gallery:
+    print("the front serves no models: register a pair when you start it, e.g.")
+    print("  c2c-serve --pair receiver-mini+sharer-mini          # toy pair, no downloads")
+    print("  c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B -e hf   # real pair")
+    raise SystemExit(2)
+rows = sorted({((lambda r: r[4:] if r.startswith("c2c/") else r)(str(m.get("id", ""))),
+                str(m.get("description") or ""))
+               for m in gallery if m.get("id")})
+block = "    c2c:\n        api: openai-completions\n        auth: none\n"
+block += f"        baseUrl: {base}\n        models:\n"
+for mid, desc in rows:                        # the ids and notes the front prints itself
+    block += (f"            - id: {json.dumps(mid)}\n"
+              f"              name: {json.dumps(desc or 'C2C ' + mid)}\n")
+block += "\n"
 p = os.path.expanduser("~/.omp/agent/models.yml")
-block = """    c2c:
-        api: openai-completions
-        auth: none
-        baseUrl: http://127.0.0.1:8788/v1
-        models:
-            - id: receiver-mini+sharer-mini
-              name: C2C demo pair (toy models, fused wire)
-
-"""
 os.makedirs(os.path.dirname(p), exist_ok=True)
 src = open(p).read() if os.path.isfile(p) else ""
 if "\n    c2c:" in "\n" + src:
-    print("c2c already registered; nothing changed")
+    print("c2c already registered; nothing changed (paste again after removing its block)")
 else:
     if src:
         shutil.copy(p, p + ".bak")
@@ -62,20 +76,24 @@ else:
     else:
         lines.insert(0, "providers:\n" + block)
     open(p, "w").writelines(lines)
-    print("c2c merged" + (", backup at " + p + ".bak" if src else ""))
+    print(f"c2c merged, {len(rows)} model(s) taken from the live front: "
+          + ", ".join(mid for mid, _desc in rows)
+          + (", backup at " + p + ".bak" if src else ""))
 EOF
 omp models find c2c
 ```
 
-The table listing `receiver-mini+sharer-mini` is the proof. Restart omp —
-config loads at startup — and the pair appears in the model picker like any
-other entry. Off-localhost fronts: TLS (`--certfile/--keyfile`) plus
-`--api-key` at the start, and swap the entry's `auth: none` for
+The table, listing the ids the paste just read off the front, is the proof.
+Restart omp — config loads at startup — and the pair appears in the model
+picker like any other entry. Off-localhost fronts: TLS (`--certfile/--keyfile`)
+plus `--api-key` at the start, and set `C2C_BASE` before the paste so the
+entry carries the right URL, then swap the entry's `auth: none` for
 `apiKey: <that key>` + `authHeader: true`.
 
 ## 3. The models, by name
 
-Address the fused pair as one model wherever omp takes a model name:
+Address one fused pair as one model, wherever omp takes a model name — the
+ids below are the demo pair's; use what `omp models find c2c` lists for you:
 
 ```text
 /model c2c/receiver-mini+sharer-mini
