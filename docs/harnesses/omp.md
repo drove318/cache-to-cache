@@ -17,7 +17,7 @@ c2c train -d fixtures/datasets/tiny.jsonl \
      --receiver receiver-mini --sharer sharer-mini -e reference \
      --epochs 3 -o demo-fuser.safetensors
 c2c-serve --pair receiver-mini+sharer-mini:demo-fuser.safetensors \
-     -e reference --host 127.0.0.1 --port 8788 --api-key c2c-demo-key
+     -e reference --host 127.0.0.1 --port 8788
 ```
 
 Real models ride the same two commands. With `-e hf` (`pip install
@@ -26,30 +26,34 @@ pair are Hugging Face ids or local model folders:
 
 ```bash
 c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:fuser.safetensors \
-     -e hf --host 127.0.0.1 --port 8788 --api-key c2c-demo-key
+     -e hf --host 127.0.0.1 --port 8788 --api-key "$(openssl rand -hex 32)"
 ```
 
 ## 2. The provider, registered
 
-omp reads custom endpoints from `~/.omp/agent/models.yml` — the OpenAI wire,
-no fork, no patch (`apiKey` names an environment variable or is the literal
-key; `authHeader` sends it as `Authorization: Bearer`):
+Edit (do not replace) `~/.omp/agent/models.yml` — the file usually already
+carries your real providers, so add `c2c:` *under* the existing `providers:`
+key, matching the indentation of the entries beside it (YAML that misnests
+makes omp skip the whole custom file):
 
 ```yaml
-providers:
-  c2c:
-    baseUrl: http://127.0.0.1:8788/v1
+# inside the existing providers: mapping, same indent as its other entries
+c2c:
     api: openai-completions
-    apiKey: c2c-demo-key
-    authHeader: true
+    baseUrl: http://127.0.0.1:8788/v1
+    auth: none          # keyless localhost, like ollama; with --api-key at the
+                        # front's start, trade this line for apiKey + authHeader
     models:
-      - id: receiver-mini+sharer-mini
-        name: C2C demo pair (toy models, fused wire)
-        contextWindow: 2048
-        maxTokens: 256
+        - id: receiver-mini+sharer-mini
+          name: C2C demo pair (toy models, fused wire)
+          contextWindow: 2048
+          maxTokens: 256
 ```
 
-Restart omp to load it; `omp models find c2c` confirms it registered.
+A front off localhost: terminate it with TLS (`--certfile/--keyfile`), set
+`api_key` at its start, and trade `auth: none` for `apiKey: <the key>` plus
+`authHeader: true`. Restart omp to load the file; `omp models find c2c`
+confirming the model is the proof of a clean merge.
 
 ## 3. The models, by name
 
