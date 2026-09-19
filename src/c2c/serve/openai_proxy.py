@@ -979,12 +979,18 @@ def _register_cli_pairs(
             (receiver_id, receiver_url or url, "receiver", sharer_id),
             (sharer_id, sharer_url or url, "sharer", receiver_id),
         ):
-            if base:
-                hub.register_model(
-                    mid,
-                    options={"base_url": base, "role": role, "peer_model": peer},
-                    note=f"side of a wired pair ({role})",
-                )
+            if not base:
+                continue
+            if receiver_id == sharer_id:
+                # one server, both halves of the pair: one adapter, wearing receiver
+                if mid != receiver_id:
+                    continue
+                peer, role = mid, "receiver"
+            hub.register_model(
+                mid,
+                options={"base_url": base, "role": role, "peer_model": peer},
+                note=f"side of a wired pair ({role})",
+            )
         fuser = None
         if weights is not None:
             fuser = _load_fuser_state(weights)

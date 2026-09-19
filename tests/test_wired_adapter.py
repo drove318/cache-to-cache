@@ -172,3 +172,27 @@ class TestTheFrontKeepsItsWord:
         built = engines.load("vllm-wired", model_id="receiver-model", base_url="http://x")
         assert isinstance(built, VLLMWiredAdapter)
         assert built.FUSES_IN_GENERATE is True
+
+    def test_one_server_wearing_both_halves(self, server):
+        """The boxs true topology: one name, the pair folds onto itself."""
+        hub = ModelHub()
+        hub.set_engine("vllm-wired")
+        from c2c.serve.openai_proxy import _register_cli_pairs
+
+        _register_cli_pairs(
+            hub, ["receiver-model←receiver-model"], engine="vllm-wired", url=server
+        )
+        result = ChatPipeline(hub=hub).complete(
+            model="c2c/receiver-model←receiver-model",
+            prompt_text="ab",
+            max_new_tokens=4,
+            temperature=0.0,
+            tools=None,
+            stop=None,
+        )
+        assert result["used_cache"] is True  # the pair claim survives the fold
+        legs = [body for path, body in _Recorder.received if path == "/v1/completions"]
+        assert len(legs) == 2
+        assert legs[0]["model"] == legs[1]["model"] == "receiver-model"  # one server, two legs
+        assert legs[0]["kv_transfer_params"]["c2c"]["role"] == "sharer"
+        assert legs[1]["kv_transfer_params"]["c2c"]["role"] == "receiver"
