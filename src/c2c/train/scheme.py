@@ -302,7 +302,9 @@ class Trainer:
 
         # (2) fuse the caches — the token-row mapping selects, per receiver
         #     row, the sharer row that covers the same span of the context
-        if len(ctx_r_ids) != len(ctx_s_ids):
+        if ctx_r_ids != ctx_s_ids:
+            # the shortcut is only for the very same rows; equal length with
+            # differing content is exactly what the aligner is for (FR-10)
             from ..align.tokens import TokenAligner  # heavy import deferred
 
             aligner = TokenAligner(self.receiver_tokenizer, self.sharer_tokenizer)

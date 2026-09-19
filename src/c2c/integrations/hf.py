@@ -203,6 +203,19 @@ class HFAdapter(EngineAdapter):
             return pending[0]
         return None
 
+    def _installed_for(self, prompt_tokens):
+        """The installed cache, if it was installed for this very prompt.
+
+        The gate mirrors the reference engines installed_prompt comparison:
+        a cache delivered for one prompt must not condition the answer to
+        another — the relay rides its own, fresh."""
+        pending = getattr(self, "_pending", None)
+        if pending is None or not isinstance(pending[0], LayeredCache) or not len(pending[0]):
+            return None
+        if pending[1] is not None and pending[1] != list(prompt_tokens):
+            return None
+        return pending[0]
+
     def score(self, token_ids):
         """Teacher-forced logits, rows aligned to predict ``token_ids[t+1]``.
 
@@ -242,7 +255,7 @@ class HFAdapter(EngineAdapter):
         }
         if kwargs["do_sample"]:
             kwargs["temperature"] = float(temperature)
-        layers = self._installed()
+        layers = self._installed_for(prompt_tokens)
         if layers is not None:
             kwargs["past_key_values"] = self._install_cache(layers)
         with self._torch.no_grad():

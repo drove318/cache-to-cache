@@ -387,7 +387,7 @@ class ChatPipeline:
         cache_r = capture_r(prompt_ids)
         cache_s = capture_s(share_ids)
         token_mapping = None
-        if len(prompt_ids) != len(share_ids):
+        if prompt_ids != share_ids:  # equal length, differing content, is the aligners work
             from ..align.tokens import TokenAligner
 
             factory = getattr(target.pair, "aligner", None) if target.pair else None

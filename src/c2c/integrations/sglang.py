@@ -46,6 +46,7 @@ class SGLangAdapter(EngineAdapter):
         self._runtime = None
         self._hooks = self._discover_hooks()
         self._degraded = self._hooks is None
+        self._pending: tuple = (None, None)  # (cache, prompt) or (None, None); never read unset
 
     def _discover_hooks(self):
         """Locate the radix-cache hooks of the installed runtime."""
@@ -92,7 +93,10 @@ class SGLangAdapter(EngineAdapter):
 
     # -- CacheInjector ──────────────────────────────────────────────────────
     def install(self, cache, prompt_tokens=None):
-        self._pending = cache if isinstance(cache, LayeredCache) and len(cache) else None
+        if isinstance(cache, LayeredCache) and len(cache):
+            self._pending = (cache, list(prompt_tokens) if prompt_tokens is not None else None)
+        else:
+            self._pending = (None, None)
 
     def generate(
         self,
@@ -104,6 +108,9 @@ class SGLangAdapter(EngineAdapter):
         stop=None,
     ):
         runtime = self._ensure_runtime()
+        layers, for_prompt = self._pending
+        if layers is not None and for_prompt is not None and for_prompt != list(prompt_tokens):
+            layers = None  # the installation belongs to another prompt; ride fresh
         out = runtime.generate(
             prompt_token_ids=list(prompt_tokens),
             sampling_params={
@@ -111,7 +118,7 @@ class SGLangAdapter(EngineAdapter):
                 "max_new_tokens": int(max_new_tokens),
                 "stop": list(stop) if stop else None,
             },
-            prefix_cache=self._pending,
+            prefix_cache=layers,
         )
         return str(out)
 

@@ -56,6 +56,7 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
         self._connector = self._find_connector(import_module)
         self._engine = None
         self._degraded = self._connector is None
+        self._pending: tuple = (None, None)  # (cache, prompt) or (None, None); never read unset
 
     @staticmethod
     def _find_connector(importer):
@@ -129,9 +130,9 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
     # -- CacheInjector ──────────────────────────────────────────────────────
     def install(self, cache, prompt_tokens=None):
         if self._connector is None or not isinstance(cache, LayeredCache) or not len(cache):
-            self._pending = None
+            self._pending = (None, None)
             return
-        self._pending = cache
+        self._pending = (cache, list(prompt_tokens) if prompt_tokens is not None else None)
 
     def generate(
         self,
@@ -151,8 +152,9 @@ class vLLMAdapter(EngineAdapter):  # noqa: N801 — the engines brand spelling
             stop=list(stop) if stop else None,
         )
         prompt_token_ids = {"prompt_token_ids": list(prompt_tokens)}
-        if self._pending is not None:
-            prompt_token_ids["cache"] = self._pending
+        layers, for_prompt = self._pending
+        if layers is not None and (for_prompt is None or for_prompt == list(prompt_tokens)):
+            prompt_token_ids["cache"] = layers  # the fused rows, delivered for this prompt
         outs = engine.generate(prompts=[prompt_token_ids], sampling_params=params)
         text = outs[0].outputs[0].text if outs and outs[0].outputs else ""
         return text

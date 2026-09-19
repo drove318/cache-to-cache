@@ -16,7 +16,8 @@ Quick start — one import, many transports::
 
     fuser = c2c.Fuser(receiver_geom, sharer_geom, mapping=c2c.terminal_mapping(32, 28))
     fused = fuser(receiver_cache, sharer_cache)        # paper Eq. (3)
-    reply = injector.generate(prompt, fused_cache=fused)
+    injector.install(fused, prompt)                   # the fusion, delivered to the receiver
+    reply = injector.generate(prompt)                 # the receiver, answering (Eq. 4)
 
 The public surface is exported lazily (PEP 562) so `import c2c` stays fast
 and side-effect free; heavy engines (torch, transformers, vllm…) are only

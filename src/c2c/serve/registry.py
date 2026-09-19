@@ -326,13 +326,13 @@ class ModelHub:
         """
         if not model_id:
             return None
+        from ..integrations import engines
+        from ..integrations.registry import AdapterNotSupported
+
         factory = self._factories.get(self.engine_name)
         try:
             if factory is not None:
                 return factory(model_id, dict(options or {}))
-            from ..integrations import engines
-            from ..integrations.registry import AdapterNotSupported
-
             return engines.load(self.engine_name, model_id=model_id, **(options or {}))
         except (ModuleNotFoundError, AdapterNotSupported):
             if self.engine_name != "reference":
@@ -340,7 +340,13 @@ class ModelHub:
             from .echo import EchoEngine
 
             return EchoEngine(model_id, dict(options or {}))
-        except Exception:
+        except Exception as exc:
+            import sys
+
+            sys.stderr.write(
+                f"[c2c] the engine {self.engine_name!r} refused to build {model_id!r}: "
+                f"{exc.__class__.__name__}: {exc}\n"
+            )
             return None
 
 

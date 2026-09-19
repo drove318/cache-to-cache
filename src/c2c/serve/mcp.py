@@ -166,7 +166,11 @@ class MCPServer:
             except json.JSONDecodeError as exc:
                 self.write(self._error(None, PARSE_ERROR, f"parse error: {exc.msg}"))
                 continue
-            self.dispatch(message)
+            try:
+                self.dispatch(message)
+            except Exception as exc:  # a stray line is noise, not death
+                self.log(f"internal error answering {line[:60]!r}: {exc.__class__.__name__}")
+                self.write(self._error(None, INTERNAL_ERROR, "the server failed to answer"))
 
     def respond(self, message: dict) -> dict | None:
         """One JSON-RPC message in, the answer (or none) out, for the HTTP transport.
@@ -185,10 +189,19 @@ class MCPServer:
 
     def _route(self, message: dict, emit) -> None:
         """The conversation itself, with the answer handed to ``emit``."""
+        if not isinstance(message, dict):
+            emit(
+                self._error(
+                    None,
+                    INVALID_REQUEST,
+                    "a JSON-RPC message must be an object, as the wire defines",
+                )
+            )
+            return
         method = message.get("method")
         identifier = message.get("id")
         is_notification = identifier is None and method is not None
-        if not isinstance(message, dict) or not isinstance(method, str):
+        if not isinstance(method, str):
             if not is_notification:
                 emit(
                     self._error(
@@ -315,7 +328,7 @@ class MCPServer:
         cache_r = receiver.capture(r_ids)
         cache_s = sharer.capture(s_ids)
         token_mapping = None
-        if len(r_ids) != len(s_ids):
+        if r_ids != s_ids:  # equal length, differing content, is the aligners work
             from ..align.tokens import TokenAligner
 
             token_mapping = TokenAligner(receiver, sharer).select_rows(r_ids)

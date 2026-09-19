@@ -44,8 +44,8 @@ class TransformationResult:
 
     mae: float  # mean absolute error to the target rows
     purity: float  # share of rows whose nearest neighbour is intended
-    distance_before: float  # mean pairwise distance, raw caches
-    distance_after: float  # mean pairwise distance, transformed vs target
+    distance_before: float  # mean pairwise distance, under the untrained projector
+    distance_after: float  # mean pairwise distance, transformed against the target
     steps: int = 0
     loss_curve: tuple = field(default_factory=tuple, compare=False)
 
@@ -97,12 +97,6 @@ class TransformationOracle:
     ) -> TransformationResult:
         """Fit the projector from *source* caches onto *target* caches."""
         x, y = self._aligned_pair(source, target)
-        if x.shape[1] != y.shape[1]:
-            msg = (
-                f"aligned representations require equal feature dimensions, "
-                f"got {x.shape[1]} and {y.shape[1]}"
-            )
-            raise ValueError(msg)
         torch.manual_seed(self.seed)
         self.projector = PreProjection(int(x.shape[1]), int(y.shape[1]), layers=self.layers)
         optim = torch.optim.AdamW(self.projector.parameters(), lr=self.lr, weight_decay=0.0)
@@ -127,7 +121,9 @@ class TransformationOracle:
         with torch.no_grad():
             t = self.projector(x)
             mae = float((t - y).abs().mean())
-            d_before = _mean_pairwise_distance(x, y)
+            torch.manual_seed(self.seed)  # replay the projector as first initialised
+            untrained = PreProjection(int(x.shape[1]), int(y.shape[1]), layers=self.layers)
+            d_before = _mean_pairwise_distance(untrained(x), y)
             d_after = _mean_pairwise_distance(t, y)
             purity = self._nearest_neighbour_purity(t, y)
         return TransformationResult(
