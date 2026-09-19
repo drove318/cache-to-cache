@@ -116,7 +116,6 @@ def canonical_routes() -> list[str]:
 
 def constant_time_equals(candidate: str, key: str) -> bool:
     """Compare two secrets without the timing oracle of plain equality.
-
     The stdlib's own tool, on the bytes of both: the time taken says
     nothing of where — or whether — the two differ. ``==`` on an API key
     is a measurement an attacker may read; this one is not.
@@ -737,6 +736,15 @@ def serve_forever(config: ServeConfig | None = None, *, hub=None) -> None:
         _claims = []
     for _mid, _ctx in _claims:
         sys.stderr.write(f"    * {_mid} — answers within {_ctx} tokens, the model's own claim\n")
+    try:
+        if _pipe is not None and not _pipe.hub.curated and not _pipe.hub.describe_models():
+            sys.stderr.write(
+                "    no models yet: --pair receiver←sharer registers a collaboration;"
+                " pip install 'c2c-cache[train]' arms the reference engine,"
+                " and any name then answers\n"
+            )
+    except Exception:  # a hint never blocks a boot
+        pass
     sys.stderr.write("  the harness stays the master; C2C is the wire between models.\n")
     try:
         server_obj.serve_forever()

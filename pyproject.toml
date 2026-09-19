@@ -78,6 +78,7 @@ tgi = "c2c.integrations.tgi:TGIAdapter"
 ollama = "c2c.integrations.ollama:OllamaAdapter"
 mlx = "c2c.integrations.mlx:MLXAdapter"
 "llama-cpp" = "c2c.integrations.llamacpp:LlamaCppAdapter"
+echo = "c2c.serve.echo:EchoEngine"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -310,14 +310,20 @@ class ModelHub:
             "provider": obj,
             "injector": obj,
             "options": {},
-            "note": f"auto-built via {self.engine_name}",
+            "note": str(getattr(obj, "DEGRADATION", None) or f"auto-built via {self.engine_name}"),
         }
         with self._lock:
             self._models.setdefault(model_id, entry)
         return entry
 
     def _build(self, model_id: str, options: dict) -> Any | None:
-        """Instantiate an adapter for *model_id* through the engine registry."""
+        """Instantiate an adapter for *model_id* through the engine registry.
+
+        When the house engine itself is absent — the core wheel, torch not
+        installed — and the operator has not pinned anything else, the hub
+        falls back to the relay: an empty front is not the out-of-the-box
+        promise. The relay says so in its own note; nothing is pretended.
+        """
         if not model_id:
             return None
         factory = self._factories.get(self.engine_name)
@@ -325,8 +331,15 @@ class ModelHub:
             if factory is not None:
                 return factory(model_id, dict(options or {}))
             from ..integrations import engines
+            from ..integrations.registry import AdapterNotSupported
 
             return engines.load(self.engine_name, model_id=model_id, **(options or {}))
+        except (ModuleNotFoundError, AdapterNotSupported):
+            if self.engine_name != "reference":
+                return None  # an operator-pinned engine fails honestly
+            from .echo import EchoEngine
+
+            return EchoEngine(model_id, dict(options or {}))
         except Exception:
             return None
 
