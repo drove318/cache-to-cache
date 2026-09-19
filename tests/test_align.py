@@ -195,9 +195,11 @@ class TestLayerAlignment:
         mapping = depth_normalized_mapping(receiver_layers=lr, sharer_layers=ls)
         scale = (ls - 1) / (lr - 1)
         for n in range(lr):
-            expected = min(max(int(round(n * scale + 0.5)), 0), ls - 1)
+            expected = min(max(int(n * scale + 0.5), 0), ls - 1)  # floor(x + ½), the half-away rule
             assert mapping[n] == expected, f"G({n})"
         assert mapping[-1] == ls - 1  # the last, to the last, again
+        # hand-computed from Eq. (5), scale 13/28: 7→3.25→3, 14→6.5→7, 21→9.75→10
+        assert [mapping[n] for n in (0, 7, 14, 21, 28)] == [0, 3, 7, 10, 13]
 
     def test_validate_reports_the_geometry_of_the_misfit(self):
         mapping = terminal_mapping(receiver_layers=4, sharer_layers=3)

@@ -45,9 +45,7 @@ def _depth_normalized_table(receiver_layers: int, sharer_layers: int) -> list[in
     if receiver_layers <= 1:
         return [sharer_layers - 1] * receiver_layers
     scale = (sharer_layers - 1) / (receiver_layers - 1)
-    return [
-        min(max(int(round(n * scale + 0.5)), 0), sharer_layers - 1) for n in range(receiver_layers)
-    ]
+    return [min(max(int(n * scale + 0.5), 0), sharer_layers - 1) for n in range(receiver_layers)]
 
 
 _TABLES = {"terminal": _terminal_table, "depth-normalized": _depth_normalized_table}
