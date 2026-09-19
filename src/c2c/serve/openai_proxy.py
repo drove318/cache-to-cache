@@ -352,7 +352,11 @@ class ChatPipeline:
                     stop=stop,
                 )
             )
-            used = False
+            used = (
+                target.pair is not None
+                and bool(getattr(receiver, "FUSES_IN_GENERATE", False))
+                and not (would_fuse and sealed)
+            )
         reply = {
             "answer": answer,
             "prompt_tokens": len(prompt_ids),
@@ -397,7 +401,7 @@ class ChatPipeline:
                     stop=stop,
                 )
             )
-            return answer, False
+            return answer, bool(getattr(receiver, "FUSES_IN_GENERATE", False))
         share_ids = list(share_encode(prompt_text))
         cache_r = capture_r(prompt_ids)
         cache_s = capture_s(share_ids)
@@ -928,6 +932,18 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
         help="register a collaboration pair (repeatable); attach a "
         "trained fuser: 'receiver←sharer:/path/to/weights.pt'",
     )
+    parser.add_argument(
+        "--url",
+        default=None,
+        metavar="URL",
+        help="the server both sides of every --pair live on (remote engines: vllm-wired, tgi, ollama)",
+    )
+    parser.add_argument(
+        "--receiver-url", default=None, metavar="URL", help="the receiver's server, if split"
+    )
+    parser.add_argument(
+        "--sharer-url", default=None, metavar="URL", help="the sharer's server, if split"
+    )
     parser.add_argument("--config", default=None, help="path to a config.json")
     parser.add_argument(
         "--privacy",
@@ -940,7 +956,15 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
     return parser
 
 
-def _register_cli_pairs(hub, pairs: Sequence[str], *, engine: str | None = None) -> None:
+def _register_cli_pairs(
+    hub,
+    pairs: Sequence[str],
+    *,
+    engine: str | None = None,
+    url: str | None = None,
+    receiver_url: str | None = None,
+    sharer_url: str | None = None,
+) -> None:
     """Parse ``--pair`` specifications and register them on the hub."""
     probed: set[str] = set()
     for raw in pairs:
@@ -951,6 +975,16 @@ def _register_cli_pairs(hub, pairs: Sequence[str], *, engine: str | None = None)
             sys.stderr.write(f"c2c-serve: ignoring un-parsable pair {raw!r}\n")
             continue
         receiver_id, sharer_id = parsed
+        for mid, base, role, peer in (
+            (receiver_id, receiver_url or url, "receiver", sharer_id),
+            (sharer_id, sharer_url or url, "sharer", receiver_id),
+        ):
+            if base:
+                hub.register_model(
+                    mid,
+                    options={"base_url": base, "role": role, "peer_model": peer},
+                    note=f"side of a wired pair ({role})",
+                )
         fuser = None
         if weights is not None:
             fuser = _load_fuser_state(weights)
@@ -1082,7 +1116,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.engine:
         default_hub.set_engine(args.engine)
     if args.pair:
-        _register_cli_pairs(default_hub, args.pair, engine=args.engine)
+        _register_cli_pairs(
+            default_hub,
+            args.pair,
+            engine=args.engine,
+            url=args.url,
+            receiver_url=args.receiver_url,
+            sharer_url=args.sharer_url,
+        )
     _preflight_tls(cfg, "c2c-serve")
     try:
         serve_forever(cfg)

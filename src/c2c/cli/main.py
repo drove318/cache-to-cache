@@ -200,6 +200,25 @@ def cmd_train(args: argparse.Namespace) -> int:
     from ..integrations import engines
     from ..train.scheme import Trainer, load_jsonl_dataset, manual_seed
 
+    if str(args.engine or "") in ("vllm-wired", "vllm_wired"):
+        print(
+            error_hint(
+                "train refuses against a wired server; the ledger:",
+                hint=(
+                    "the engine scores through fp8 paged kernels — a value, never a gradient; "
+                    "the second model copy the loss needs does not fit the card; "
+                    "and the wire must be trained at the geometry the server alone wears.\n"
+                    "The roads that work, in road-b/train_handoff.md:\n"
+                    "  · train offline on the twins (the full-precision weights of these same "
+                    "snapshots, the HF path), then launch the wired server with the file: "
+                    "c2c_wire=<path>;\n"
+                    "  · or c2c train -e reference for the paper's exact toy-scale reproduction, "
+                    "CPU-true."
+                ),
+            ),
+            file=sys.stderr,
+        )
+        return 2
     cfg = load_config(args.config)
     seed = args.seed if args.seed is not None else cfg.seed
     if not os.path.isfile(args.dataset):

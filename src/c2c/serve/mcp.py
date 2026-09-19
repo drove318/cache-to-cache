@@ -328,6 +328,12 @@ class MCPServer:
         if target.relay or target.fuser is None:
             raise _BadParams(f"model {model!r} is a relay pair; register a fuser first")
         receiver, sharer, fuser = target.receiver, target.sharer, target.fuser
+        if not hasattr(receiver, "capture") or not hasattr(sharer, "capture"):
+            msg = (
+                f"model {model!r} fuses inside its server (the wired engine keeps the cache "
+                "to itself): the preview belongs to the log — ask the pair and read the answer"
+            )
+            raise _BadParams(msg)
         r_ids = list(receiver.encode(prompt))
         s_ids = list(sharer.encode(prompt))
         cache_r = receiver.capture(r_ids)

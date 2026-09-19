@@ -58,7 +58,7 @@ def truncated(text: str, stop: Sequence[str] | None) -> str:
 
 ENTRY_POINT_GROUP = "c2c.engines"
 
-#: the built-in distribution: one ABI, nine adapters, all listed, all
+#: the built-in distribution: one ABI, ten adapters, all listed, all
 #: registered, on the bus of the engines. Adapters import their engines
 #: lazily, on construction — importing this module never imports an engine,
 #: and registering an adapter never loads one (availability policy, §4.1).
@@ -72,6 +72,7 @@ _BUILTIN_TARGETS: dict[str, str] = {
     "tgi": "c2c.integrations.tgi:TGIAdapter",
     "ollama": "c2c.integrations.ollama:OllamaAdapter",
     "mlx": "c2c.integrations.mlx:MLXAdapter",
+    "vllm-wired": "c2c.integrations.vllm_wired.adapter:VLLMWiredAdapter",
 }
 
 
