@@ -159,15 +159,43 @@ class TrainingResult:
 
 
 def load_checkpoint_blob(path: str):
-    """Unpickle a checkpoint: the tensors, and the c2c enum members, only.
+    """Read a checkpoint: a torch zip pickle, or a real safetensors container.
 
-    ``torch.load`` with ``weights_only=True`` refuses unknown globals; the
+    The magic bytes decide the reader, not the name: a file opening ``PK``
+    came from ``torch.save``; anything else is safetensors, whose tensors
+    ride beside a ``c2c-json`` metadata string (IntEnum members return as
+    the numbers json left them — the nets want them as members). Inside
+    ``torch.load``, ``weights_only=True`` refuses unknown globals; the
     attention's kind (``c2c.types.AttentionKind``) rides in the geometry of
     a checkpoint as one of ours — allow the c2c enums, explicitly, and
     nothing else. A checkpoint from an untrusted source is not a checkpoint.
     """
     from enum import Enum
     from .. import types as _types
+    with open(path, "rb") as fh:
+        magic = fh.read(4)
+    if magic != b"PK\x03\x04":
+        import json
+        import struct
+        from safetensors.torch import load_file
+        tensors = load_file(path)
+        with open(path, "rb") as fh:                    # the header: u64 length, then json
+            (head_len,) = struct.unpack("<Q", fh.read(8))
+            header = json.loads(fh.read(head_len).decode("utf-8"))
+        meta = header.get("__metadata__") or {}
+        if meta.get("c2c-format") != "c2c-fuser-checkpoint-v1":
+            msg = f"{path}: not a c2c fuser checkpoint (missing magic)"
+            raise ValueError(msg)
+        blob = json.loads(meta.get("c2c-json") or "{}")
+        blob["format"] = meta["c2c-format"]
+        blob["state_dict"] = {k[len("state."):]: v for k, v in tensors.items()
+                              if k.startswith("state.")}
+        geometry = blob.get("geometry") or {}
+        for side in ("receiver", "sharer"):
+            kind = geometry.get(side, {}).get("attention_kind")
+            if isinstance(kind, int) and not isinstance(kind, _types.AttentionKind):
+                geometry[side]["attention_kind"] = _types.AttentionKind(kind)
+        return blob
     mine = [value for _name, value in vars(_types).items()
             if isinstance(value, type) and issubclass(value, Enum)
             and value.__module__ == _types.__name__]
@@ -323,7 +351,7 @@ class Trainer:
         directory = os.path.dirname(os.path.abspath(path))
         if directory:
             os.makedirs(directory, exist_ok=True)
-        torch.save({
+        blob = {
             "format": "c2c-fuser-checkpoint-v1",
             "state_dict": self.fuser.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -336,7 +364,22 @@ class Trainer:
                 "gate_config": asdict(self.fuser.gate_config),
                 "blend_config": asdict(self.fuser.blend_config),
             },
-        }, path)
+        }
+        if str(path).endswith(".safetensors"):
+            # the name promises safetensors; keep the promise. the geometry is
+            # scalars and IntEnum members only — json carries both faithfully.
+            import json
+            from safetensors.torch import save_file
+            save_file(
+                {f"state.{k}": v.detach().cpu().contiguous()
+                 for k, v in blob["state_dict"].items()},
+                path,
+                metadata={"c2c-format": blob["format"],
+                          "c2c-json": json.dumps({"recipe": blob["recipe"],
+                                                 "geometry": blob["geometry"]})},
+            )
+        else:
+            torch.save(blob, path)
         return path
 
     def load_checkpoint(self, path: str, *, strict: bool = True) -> dict:

@@ -50,8 +50,8 @@ Paper = "https://arxiv.org/abs/2510.03215"
 [project.optional-dependencies]
 # The wire (proxy/MCP/CLI/doctor) is stdlib-only; torch is the brain, an
 # extra. Engines are optional peers behind the adapter ABI (spec §4.1).
-train = ["torch>=2.1"]                     # the fuser, the trainer, the alignment nets
-gpu = ["torch>=2.1"]                       # the CUDA build, on the gpu runner of the CI
+train = ["torch>=2.1", "safetensors>=0.4"]   # the fuser, the trainer, the alignment nets
+gpu = ["torch>=2.1", "safetensors>=0.4"]      # the CUDA build, on the gpu runner of the CI
 viz = ["matplotlib>=3.7"]
 crypto = ["cryptography>=41"]              # EX-5 privacy mode: AES-GCM on the wire
 dev = ["pytest>=7.4", "pytest-timeout>=2.1"]

@@ -135,6 +135,32 @@ class TestTrainingLoop:
         assert _lr_lambda(55, 10, 100) == pytest.approx(0.5)   # half way down the slide
         assert _lr_lambda(100, 10, 100) == pytest.approx(0.0)  # the end, of the line
 
+    def test_checkpoints_honour_their_names(self, tmp_path):
+        """The quickstart writes ``-o x.safetensors``; the front must read it back.
+
+        The name is a contract: a ``.safetensors`` file is the real container,
+        not a zip pickle wearing a borrowed name — torch's loader dispatches
+        on the suffix and refuses the impostor.
+        """
+        from c2c.train.scheme import load_checkpoint_blob
+        trainer = make_trainer()
+        before = trainer.fuser.state_dict()
+        for name in ("weights.pt", "weights.safetensors"):
+            path = str(tmp_path / name)
+            trainer.save_checkpoint(path)
+            with open(path, "rb") as fh:
+                magic = fh.read(4)
+            if name.endswith(".safetensors"):
+                assert magic != b"PK\x03\x04", "named safetensors, wrote a zip"
+            else:
+                assert magic == b"PK\x03\x04", "named pt, wrote something else"
+            blob = load_checkpoint_blob(path)
+            assert blob["format"] == "c2c-fuser-checkpoint-v1"
+            assert set(blob["state_dict"]) == set(before)
+            trainer.load_checkpoint(path, strict=False)
+            after = trainer.fuser.state_dict()
+            assert all(torch.equal(after[k], v) for k, v in before.items()), name
+
     def test_no_frozen_all_checkpoint_resume(self, tiny_dataset):
         """Save, load, resume: the state of the fuser, in a file."""
         trainer = make_trainer(total_steps=4)
