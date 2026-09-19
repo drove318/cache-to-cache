@@ -4,6 +4,7 @@
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
 PYTEST ?= $(PYTHON) -m pytest
+RUFF   ?= $(PYTHON) -m ruff
 
 all: lint test
 
@@ -16,8 +17,9 @@ unit:
 
 ## the lint of the code, and of the docs, and of the types
 lint:
-	ruff check src tests
-	ruff format --check src tests
+	$(RUFF) check src tests
+	$(RUFF) format --check src tests
+	$(PYTHON) -m mypy src/c2c --ignore-missing-imports  # the types, as the CI demands them
 	$(PYTHON) tools/import_smoke.py                     # every module, with and without torch
 	$(PYTHON) tools/dunder_lint.py                      # no dunder left behind
 	$(PYTHON) tools/api_lint.py                          # the exports, all of them real
@@ -53,7 +55,7 @@ clean:
 
 help:
 	@printf '%s\n' 'test    the unit suite, on the CPU' \
-	              'lint    ruff, the import smoke, the linters of the house' \
+	              'lint    ruff, the types, the import smoke, the linters of the house' \
 	              'golden  the paper, Tables 3-8, against the fixtures' \
 	              'doctor  the state of the machine, in one screen' \
 	              'man     the manual pages, into the system pager' \

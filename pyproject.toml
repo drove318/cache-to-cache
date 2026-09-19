@@ -54,7 +54,7 @@ train = ["torch>=2.1", "safetensors>=0.4"]   # the fuser, the trainer, the align
 gpu = ["torch>=2.1", "safetensors>=0.4"]      # the CUDA build, on the gpu runner of the CI
 viz = ["matplotlib>=3.7"]
 crypto = ["cryptography>=41"]              # EX-5 privacy mode: AES-GCM on the wire
-dev = ["pytest>=7.4", "pytest-timeout>=2.1"]
+dev = ["pytest>=7.4", "pytest-timeout>=2.1", "ruff>=0.16", "mypy>=2.3"]   # the gates of the house, in one command
 
 # the engines, one extra each; every extra, the name the adapters hint prints,
 # the version floored by what the index actually distributes (verified 2026-09-18).
