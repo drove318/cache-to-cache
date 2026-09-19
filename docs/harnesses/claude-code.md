@@ -13,6 +13,10 @@ c2c-serve --pair code-small:review-small -e vllm \
           --api-key "$C2C_API_KEY"
 ```
 
+The two PEM files are the operator's own; for a local test, mint a self-signed pair:
+`openssl req -x509 -nodes -newkey rsa:2048 -subj "/CN=localhost" -keyout ~/certs/key.pem
+-out ~/certs/cert.pem -days 365`.
+
 ## 2. The environment, set
 
 Claude Code reads the OpenAI conventions from the environment:

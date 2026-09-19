@@ -80,7 +80,7 @@ jobs:
         # the golden suite is honest: it skips what the machine cannot run
         run: python -m pytest tests/ --tb=short --maxfail=20
         env:
-          C2C_SEED: "440"                            # the die of the house, cast once
+          C2C_SEED: "42"                             # the die of the house, cast once — the paper's own (FR-14)
       - name: the smoke of the served, on the port
         run: |
           python -m pytest tests/test_serve_openai.py --tb=short

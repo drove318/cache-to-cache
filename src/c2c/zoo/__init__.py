@@ -21,7 +21,25 @@ Two things live here:
 
 from __future__ import annotations
 
-from .kit import UnifiedLatentSpace
 from .publish import ZooClient, pair_id
+
+#: the numerics of the package — reachable through the attribute, not the import
+_KIT_NAMES = ("UnifiedLatentSpace",)
+
+
+def __getattr__(name: str) -> object:
+    """PEP 562: the shelf (publish.py, torch-free) does not wake the latent
+    space (kit.py, torch) until somebody asks the package for it by name."""
+    if name in _KIT_NAMES:
+        from . import kit
+
+        return getattr(kit, name)
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(__all__) | {"__getattr__", "__dir__"})
+
 
 __all__ = ["UnifiedLatentSpace", "ZooClient", "pair_id"]

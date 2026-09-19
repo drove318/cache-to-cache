@@ -9,7 +9,7 @@ instruction to contributors too.
 1. **Read the two normative sources.** The paper (Fu et al., *Cache-to-
    Cache*, ICLR 2026, arXiv:2510.03215v2) is normative; where the spec
    and the paper disagree, the paper wins. Where both are silent, the
-   tests decide. `man c2c`, `man c2c-fuser`, `man c2c.config`, and the
+   tests decide. `c2c man c2c`, `c2c man fuser`, `c2c man config`, and the
    rest, are the living documentation; keep them true to the code.
 2. **Branch from `main`,** name the branch for the change, and open the
    pull request against `main`.
@@ -63,15 +63,16 @@ fusion layer by layer — which gate opened, how far its delta travelled.
 The matrix (`.github/workflows/ci.yaml`) builds, on `pull_request` and on
 `push` to `main`:
 
-- **unit** — `pytest tests/` on CPU, `python -m pytest`, the whole suite
-  minus the slow and the gpu markers;
-- **lint** — `ruff check`, `ruff format --check`, and `mypy` on the
-  `py.typed`-marked sources;
-- **import** — `python tools/import-smoke.py`: every module imports, with
+- **unit** — `python -m pytest tests/` on CPU: the whole suite; the slow and
+  the gpu tests skip themselves, honestly, when the hardware cannot run them;
+- **lint** — `ruff check`, `ruff format --check`, and `mypy` on the sources;
+- **import** — `python tools/import_smoke.py`: every module imports, with
   and without torch present, on a machine with no network;
-- **golden** — `c2c eval --all`: the paper's Tables 3–8, within tolerance,
-  against the shipped fixtures; skipped, not failed, when the hardware
-  cannot run the models (the suite is honest about what it did not check).
+- **golden** — rides inside the test job (`tests/test_golden.py`): the
+  paper's Tables 3–8, within tolerance, against the shipped fixtures;
+  skipped, not failed, when the hardware cannot run the models (the suite
+  is honest about what it did not check). Targeted runs: `c2c eval
+  --table N --verbose`.
 
 A red CI does not merge. A missing fixture does not silently pass.
 

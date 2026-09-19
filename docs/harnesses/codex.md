@@ -39,8 +39,8 @@ codex "explain the theorem of pythagoras, briefly"
 
 In the server log the line says `fused=true`; the per-layer gates live in the
 probe records (`c2c fuse --report`). And in the answer, the gain the paper
-measured — 6.4 % to 14.2 % over the
-stronger model alone, Tables 3–8 (`c2c eval` replays them against the
+measured — 6.4 % to 14.2 % higher average accuracy than the individual
+models (Abstract; Tables 3–8; `c2c eval` replays them against the
 fixtures).
 
 ## Fault notes

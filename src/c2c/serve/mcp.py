@@ -106,6 +106,11 @@ TOOLS = [
                 "prompt": {"type": "string", "description": "the question"},
                 "max_tokens": {"type": "integer", "minimum": 1, "default": 64},
                 "temperature": {"type": "number", "minimum": 0.0, "default": 0.0},
+                "c2c": {
+                    "type": "object",
+                    "description": "the per-query c2c options, same shape as the served "
+                    "wires c2c body: {gate: block, block_list: [sharer ids]}",
+                },
             },
             "required": ["model", "prompt"],
         },
@@ -332,6 +337,7 @@ class MCPServer:
         from .openai_proxy import ChatPipeline
 
         pipeline = ChatPipeline(hub=self.hub)
+        c2c_options = args.get("c2c") if isinstance(args.get("c2c"), dict) else None
         result = pipeline.complete(
             model=model,
             prompt_text=prompt,
@@ -339,8 +345,9 @@ class MCPServer:
             temperature=temperature,
             tools=None,
             stop=None,
+            c2c_options=c2c_options,
         )
-        return {
+        out = {
             "answer": result["answer"],
             "used_cache": result["used_cache"],
             "usage": {
@@ -348,6 +355,9 @@ class MCPServer:
                 "completion_tokens": result["completion_tokens"],
             },
         }
+        if result.get("gate") == "block":
+            out["gate"] = "block"  # the refusal, declared
+        return out
 
     # -- JSON-RPC error objects, per the canonical table ───────────────────
     @staticmethod

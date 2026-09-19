@@ -30,8 +30,9 @@ upstream as well; C2C pins minimum versions and will adopt the patched.
 2. **The caches on the wire.** A KV-cache is a tensor, and a tensor is not
    code — but a tensor is data, and data is how this library rolls. A cache
    received over the wire is checked against the geometry it declares: the
-   shapes, the count of layers, the width of the hidden state (FR-15, the
-   wire contract). A cache that lies about its shape is refused, not fused.
+   shapes, the count of layers, the width of the hidden state (FR-01, the capture-and-
+   install contract; FR-12, the geometries it must survive). A cache that lies about its
+   shape is refused, not fused.
    The fuser's projections are affine, and affine maps do not execute
    instructions; still, deserialising weights from an untrusted source is
    `torch.load(..., weights_only=True)` and nothing more — with one
@@ -90,14 +91,17 @@ quality one. C2C's answer is defence in depth:
   cache, no trace, the sharer's context dropped, the receiver answering
   alone. It is a flag, and it is off by default; set it, and the fusion is
   refused before it is attempted.
-- the policy of the list — `gate=block`: a named sharer, blocked. The
-  weak, silenced; the strong, heard.
+- the policy of the list — `gate=block`, per query, on every served front: the wire
+  carries `c2c.gate = "block"` with `c2c.block_list = ["sharer", ...]`; the named
+  sharers' caches are not consulted, the receiver answers alone, and the refusal is
+  logged and declared on the answer (`gate: "block"`) — documented, never silently
+  filtered (spec §8, the paper's first limitation).
 
 ## Supply chain
 
 - torch and friends are optional extras; the core does not import them at
   the top of any module. A build with no network builds the core only.
 - The CI matrix runs without internet, except fixtures (see `c2c eval`).
-- Every release is tagged, and the tag is signed; the artefacts on PyPI
-  carry the same sha256 as the git archive, and `c2c doctor --report` will
-  tell you which one you have.
+- Every release will be tagged, and the tag signed. The artefacts are not on the
+  package index yet; when they are, they will carry the same sha256 as the git
+  archive, and `c2c doctor --report` will tell you which one you have.

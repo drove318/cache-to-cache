@@ -198,8 +198,8 @@ def cmd_train(args: argparse.Namespace) -> int:
         print(
             error_hint(
                 f"dataset not found: {args.dataset}",
-                hint="a JSON-L file of {instruction, output} records; "
-                "see examples/datasets for a tiny one",
+                hint="a JSON-L file of {instruction, output} records; a tiny one ships "
+                "at fixtures/datasets/tiny.jsonl in the checkout",
             ),
             file=sys.stderr,
         )

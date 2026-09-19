@@ -34,8 +34,6 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import torch
-
 from ..types import ModelSpec
 
 __all__ = ["pair_id", "ZooClient", "DEFAULT_ZOO_ROOT", "MANIFEST_NAME", "WEIGHTS_NAME"]
@@ -176,6 +174,8 @@ class ZooClient:
         The fuser must expose ``state_dict()`` (any :class:`torch.nn.Module`).
         Returns the manifest written.
         """
+        import torch
+
         pid = pair_id(sharer, receiver)
         directory = self._pair_dir(pid)
         os.makedirs(directory, exist_ok=True)
@@ -268,6 +268,8 @@ class ZooClient:
         :class:`torch.nn.Module` with the matching architecture (typically
         a lambda around :class:`c2c.fuser.Fuser`).
         """
+        import torch
+
         directory = self.fetch(sharer=sharer, receiver=receiver)
         blob = torch.load(
             os.path.join(directory, WEIGHTS_NAME), map_location="cpu", weights_only=True

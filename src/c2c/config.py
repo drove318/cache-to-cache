@@ -390,6 +390,8 @@ FILES
 ENVIRONMENT
     C2C_SEED               default seed (42)
     C2C_DEVICE             auto|cpu|cuda|mps
+    C2C_FUSER_VARIANT      simple | c2c-c (the C2C-C variant, FR-09)
+    C2C_FUSER_DROPOUT      dropout of the fuser paths, 0..1
     C2C_GATE_TAU_MAX       Gumbel-Sigmoid start temperature (1.0)
     C2C_GATE_TAU_MIN       Gumbel-Sigmoid stop temperature  (0.001)
     C2C_BLEND_FRACTION     fused fraction 0..1 (percent 0..100 tolerated)

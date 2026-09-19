@@ -43,7 +43,7 @@ def main() -> int:
     for name in _all_modules(root):
         try:
             mod = import_module(name)
-        except Exception as exc:                       # noqa: report every failure
+        except Exception as exc:  # noqa: report every failure
             failures.append(f"{name}: {type(exc).__name__}: {exc}")
             continue
         count += 1

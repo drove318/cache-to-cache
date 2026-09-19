@@ -22,6 +22,16 @@ DESCRIPTION
               with data: [DONE]. The token that arrives is the token of
               the receiver, the cache of the sharer already fused.
 
+       The policy of the query
+              the c2c object of the body carries the per-query options,
+              read alike by proxy, bridge, and MCP server:
+              "gate": "block" with "block_list": ["sharer", ...] refuses
+              the named sharers caches for this query alone — the receiver
+              answers alone, the refusal is logged, and the answer carries
+              "gate": "block", declared, never silently filtered. The blend
+              of the cache rides here too: "blend_fraction" (0..1, or
+              0..100) and "blend_direction" ("former" | "latter").
+
        The authentication
               authorization: bearer KEY. The key is compared in
               constant time. No key, no gate — but bind the host to

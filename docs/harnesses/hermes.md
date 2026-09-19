@@ -14,6 +14,10 @@ c2c-serve --pair math-small:coder-small -e hf \
           --api-key "$C2C_API_KEY"
 ```
 
+The two PEM files are the operator's own; for a local test, mint a self-signed pair:
+`openssl req -x509 -nodes -newkey rsa:2048 -subj "/CN=localhost" -keyout certs/key.pem
+-out certs/cert.pem -days 365`.
+
 ## 2. Configure Hermès
 
 In Hermès' model settings (its `providers` block), add one provider:
@@ -47,6 +51,6 @@ fused state — no text between the models, only cache.
 - *certificate, untrusted*: a self-signed cert needs the CA bundle on the
   client side, or serve plain HTTP on a loopback you own.
 - *model not found*: the pair is not registered — see `c2c-serve --pair`,
-  and the `[pair]` sections of the config file (`man c2c.config`).
+  and the `[pair]` sections of the config file (`c2c man config`).
 
 See also `man c2c-serve`, `man c2c-proxy`, `docs/harnesses/generic.md`.

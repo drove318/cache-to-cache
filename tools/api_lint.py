@@ -83,8 +83,7 @@ def _selfcheck() -> int:
     failures = [d for d in _GOOD_DOTTED if not _resolve(d)]
     if failures:
         for d in failures:
-            print(f"api lint SELF-CHECK FAILED: reference {d!r} does not resolve",
-                  file=sys.stderr)
+            print(f"api lint SELF-CHECK FAILED: reference {d!r} does not resolve", file=sys.stderr)
         return 2
     return 0
 
@@ -94,7 +93,7 @@ def _compile_rules() -> list[tuple[re.Pattern, str]]:
     for dotted in _GOOD_DOTTED:
         attr = dotted.rsplit(".", maxsplit=1)[-1]
         if not attr.startswith("__"):
-            continue                      # only surrounding-underscore dunders decay this way
+            continue  # only surrounding-underscore dunders decay this way
         for bad in _corruptions(attr):
             rules.append((re.compile(rf"\b{re.escape(bad)}\b"), dotted))
     return rules

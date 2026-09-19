@@ -97,6 +97,7 @@ def check_file(path: Path) -> tuple[list[str], int]:
                     )
     # 2) attribute chains rooted at an imported module or a builtins class.
     import builtins as _b
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
@@ -131,7 +132,9 @@ def check_file(path: Path) -> tuple[list[str], int]:
             continue
         _, missing = _resolve_chain(mod, chain)
         if missing:
-            errors.append(f"{path}:{node.lineno}: {root}.{'.'.join(chain)} unresolved ({missing!r})")
+            errors.append(
+                f"{path}:{node.lineno}: {root}.{'.'.join(chain)} unresolved ({missing!r})"
+            )
     return errors, skipped
 
 
@@ -150,8 +153,10 @@ def main() -> int:
     for e in all_errors:
         print(f"attr probe: {e}", file=sys.stderr)
     if all_errors:
-        print(f"attr probe: {len(all_errors)} broken reference(s), {count} file(s) scanned",
-              file=sys.stderr)
+        print(
+            f"attr probe: {len(all_errors)} broken reference(s), {count} file(s) scanned",
+            file=sys.stderr,
+        )
         return 1
     print(f"attr probe: {count} file(s) clean ({skipped_total} optional-module refs skipped)")
     return 0

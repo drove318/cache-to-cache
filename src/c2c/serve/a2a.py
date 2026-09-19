@@ -422,6 +422,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                 temperature=float(params.get("temperature", 0.0)),
                 tools=None,
                 stop=params.get("stop"),
+                c2c_options=params.get("c2c") if isinstance(params.get("c2c"), dict) else None,
             )
         except Exception as exc:  # the task, failed, said so
             self.log_error("task %s raised %r", task["id"], exc)
@@ -447,6 +448,8 @@ class A2AHandler(BaseHTTPRequestHandler):
             }
         ]
         done = store.set_state(task["id"], state, artifacts=artifact)
+        if result.get("gate") == "block":
+            done = {**(done or {}), "gate": "block"}  # the refusal, on the face of the task
         self._json({"jsonrpc": "2.0", "id": req_id, "result": done})
 
 
@@ -501,7 +504,7 @@ def build_parser(prog: str = "c2c-a2a") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description="Agent-to-Agent bridge: the card on the well-known path, "
-        "the tasks over the wire, the cache between the models (spec HL-2).",
+        "the tasks over the wire, the cache between the models (spec HL-3).",
         epilog="the harness stays the master; C2C is the wire between models.",
     )
     parser.add_argument("--host", default=None, help="interface to bind (default 127.0.0.1)")
@@ -539,7 +542,7 @@ def build_parser(prog: str = "c2c-a2a") -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The entry point of the bridge, as the console script runs it."""
-    from .openai_proxy import _register_cli_pairs, is_loopback
+    from .openai_proxy import _preflight_tls, _register_cli_pairs, is_loopback
 
     args = build_parser("c2c-a2a").parse_args(argv)
     base = load_config(args.config)
@@ -571,11 +574,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default_hub.set_engine(args.engine)
     if args.pair:
         _register_cli_pairs(default_hub, args.pair, engine=args.engine)
+    _preflight_tls(cfg, "c2c-a2a")
     try:
         serve_bridge(cfg, public_url=args.public_url)
     except OSError as exc:
         sys.stderr.write(f"c2c-a2a: cannot bind {cfg.host}:{cfg.port}: {exc}\n")
-        return 1
     return 0
 
 

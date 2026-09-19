@@ -7,7 +7,7 @@ holds the recipes, one leaf per harness, in the house voice of the project.
 | leaf                | harness            | the way in                                        |
 |-------------------|--------------------|---------------------------------------------------|
 | `hermes.md`       | Hermès             | `providers:` block, the `c2c` provider            |
-| `omp.md`          | Oh My Pi (omp)     | the provider registry, `kind: openai-compatible` |
+| `omp.md`          | Oh My Pi (omp)     | the provider registry, `api: openai-completions` |
 | `claude-code.md`  | Claude Code        | environment, `OPENAI_BASE_URL` and kin            |
 | `codex.md`        | Codex              | `config.toml`, `model_providers.c2c`              |
 | `autogen.md`      | AutoGen            | the OpenAI-compatible client, the three fields    |

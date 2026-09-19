@@ -239,8 +239,50 @@ class ChatPipeline:
         prompt_ids = list(encode(prompt_text))
         c2c_options = dict(c2c_options or {})
         sealed = bool(getattr(getattr(self.hub, "config", None), "privacy", False))
+        gate = str(c2c_options.get("gate", "")).strip().lower()
+        if gate not in ("", "block"):
+            raise HttpProblem(
+                HTTPStatus.BAD_REQUEST,
+                f"the gate {gate!r} of the c2c options is not a gate; the one known is block",
+                err_type="invalid_request_error",
+                code="invalid_c2c_options",
+                param="c2c.gate",
+            )
+        blocked: str | None = None
+        if gate == "block":
+            names = c2c_options.get("block_list")
+            if (
+                not isinstance(names, list)
+                or not names
+                or not all(isinstance(n, str) and n.strip() for n in names)
+            ):
+                msg = (
+                    "gate=block is a policy of the list: name the sharers it silences in "
+                    "c2c.block_list, a non-empty list of model ids"
+                )
+                raise HttpProblem(
+                    HTTPStatus.BAD_REQUEST,
+                    msg,
+                    err_type="invalid_request_error",
+                    code="invalid_c2c_options",
+                    param="c2c.block_list",
+                )
+            prefix = (self.hub.config.model_prefix or "").lower()
+            wanted = {n.strip().lower() for n in names}
+            wanted = {w[len(prefix) :] if prefix and w.startswith(prefix) else w for w in wanted}
+            if (
+                target.pair is not None
+                and target.sharer is not None
+                and target.pair.sharer in wanted
+            ):
+                blocked = target.pair.sharer
+                sys.stderr.write(
+                    f"[{time.strftime('%H:%M:%S', time.localtime())}] [c2c-serve] gate=block: "
+                    f"the cache of {blocked!r} is refused for this query; the receiver answers alone\n"
+                )
         if (
             not sealed
+            and blocked is None
             and not target.relay
             and target.fuser is not None
             and target.sharer is not None
@@ -266,13 +308,16 @@ class ChatPipeline:
                 )
             )
             used = False
-        return {
+        reply = {
             "answer": answer,
             "prompt_tokens": len(prompt_ids),
             "completion_tokens": self._count(receiver, answer),
             "model": model,
             "used_cache": used,
         }
+        if blocked is not None:
+            reply["gate"] = "block"  # the refusal, declared; never a quiet filter
+        return reply
 
     # -- the cache-to-cache leg ────────────────────────────────────────────
     def _run_c2c(
@@ -630,6 +675,8 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
             "usage": usage,
             "used_cache": bool(result.get("used_cache")),
         }  # the fusion, declared
+        if result.get("gate") == "block":
+            base["c2c"] = {"gate": "block"}  # and so the refusal, on the face of the answer
         if chat:
             base["id"] = self._new_id("chat-completion")
             base["object"] = "chat.completion"
@@ -889,6 +936,28 @@ class _FuserProxy:
         return self._real(receiver_cache, sharer_cache, **kwargs)
 
 
+def _preflight_tls(cfg: ServeConfig, who: str) -> None:
+    """Speak before the front binds: a missing half of a TLS pair is a user
+    error to name, not a mystery OSError to endure at the bind."""
+    if not cfg.certfile and not cfg.keyfile:
+        return
+    missing = [x for x in (cfg.certfile, cfg.keyfile) if not x or not os.path.isfile(x)]
+    if missing:
+        from ..utils.console import error_hint
+
+        names = ", ".join(repr(m or "unset") for m in missing)
+        print(
+            error_hint(
+                f"{who}: HTTPS needs --certfile and --keyfile, both readable PEM files; "
+                f"missing or unreadable: {names}",
+                hint="for a test certificate: openssl req -x509 -nodes -newkey rsa:2048 "
+                "-subj '/CN=localhost' -keyout server.key -out server.crt -days 365",
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser("c2c-serve")
     args = parser.parse_args(argv)
@@ -925,6 +994,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default_hub.set_engine(args.engine)
     if args.pair:
         _register_cli_pairs(default_hub, args.pair, engine=args.engine)
+    _preflight_tls(cfg, "c2c-serve")
     try:
         serve_forever(cfg)
     except OSError as exc:

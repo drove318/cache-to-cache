@@ -29,9 +29,12 @@ DESCRIPTION
               instrument panel of the collaboration, no answer generated.
 
        c2c_ask
-              model, prompt (required); max_tokens, temperature (optional).
+              model, prompt (required); max_tokens, temperature, c2c (optional).
               Ask the pair through the full pipeline: resolve, capture,
-              fuse, generate. Returns the answer text.
+              fuse, generate. Returns the answer text. The c2c object carries
+              the policy of the query, the same shape as the served wire:
+              {gate: block, block_list: [sharer ids]}; a refused answer
+              declares itself with gate: block.
 
        The protocol version advertised: 2025-06-18. Notifications are
        acknowledged in silence, as the specification requires; unknown
