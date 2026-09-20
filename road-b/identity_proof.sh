@@ -71,11 +71,11 @@ except (AttributeError, ValueError):
 
 await_speaking() {
     echo "[identity] awaiting the server's first token at :${PORT} (the engine warms for minutes)"
-    for ((w = 0; w < ${READY_SECS:-900}; w += 15)); do
+    for ((w = 0; w < ${READY_SECS:-2100}; w += 15)); do
         spokes && return 0
         sleep 15
     done
-    echo "[identity] the engine has spoken no token within $(( ${READY_SECS:-900} / 60 )) minutes (docker logs \$(docker ps -q --filter name=vllm-fn | head -1) | tail -30)" >&2
+    echo "[identity] the engine has spoken no token within $(( ${READY_SECS:-2100} / 60 )) minutes (docker logs \$(docker ps -q --filter name=vllm-fn | head -1) | tail -30)" >&2
     return 1
 }
 
