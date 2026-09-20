@@ -3,6 +3,36 @@
 All notable changes to C2C — Cache-to-Cache — are documented here.
 The format follows Keep a Changelog; the numbers, Semantic Versioning.
 
+## [unreleased] — the wired road: the tenth adapter, the connector, the proof
+
+### Added
+- The tenth engine adapter, `vllm-wired`: the front speaks to a running
+  wired vLLM server. Token ids ride the prompt field untouched, the
+  tokenizer stays the servers own (/tokenize, /detokenize), and the pair
+  rides the ferry the engines completion protocol defines
+  (kv_transfer_params.c2c) — no new endpoints, no fork.
+- The wired connector family: `C2CWiredConnector` in the workers
+  connector slot, the resident wire running Eq. (3) on the engines device
+  with fp8 requantisation, and fail-closed at every step. The factorys
+  own gates — the SupportsHMA marker, the three-argument constructor —
+  passed on the containers own interpreter.
+- `used_cache` tells the truth of the pair: an in-engine fuse claims it,
+  a plain relay never does, and a sealed privacy request forecloses it.
+- The remote engines finally reachable from the CLI: `--url`,
+  `--receiver-url`, `--sharer-url` carry the server address to every
+  HTTP adapter, wired included.
+- `road-b/`, the wired road walked: a launch that replays the containers
+  birth certificate from `docker inspect` (argv, env, the engine-patching
+  binds, host net, gpus) and adds only `--kv-transfer-config`; a
+  `DRY_RUN=1` rehearsal that prints the exact line and touches nothing;
+  health before word, automatic rollback on any failure; a six-face
+  greedy identity proof (B0) that admits only byte-exact answers; and
+  `train_handoff.md` — the ledger why the wire cannot be fitted on this
+  box, and the two roads that can.
+- `c2c train --engine vllm-wired` refuses, and refuses honestly: the
+  fp8 kernels are a value without a gradient, the unified pool holds no
+  second model, and the wire must wear the servers geometry.
+
 ## [1.0.0] — the first public release (roadmap, per the specification's M6)
 
 ### Added

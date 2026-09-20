@@ -120,6 +120,14 @@ recipe per harness; for the agnostic, the generic route is
 (`c2c-mcp`) and the A2A bridge (`c2c-a2a`) are documented on their own
 man pages: `c2c man mcp`, `c2c man a2a`.
 
+And when the models live in a wired vLLM server, the same front rides the
+engines own connector: `c2c-serve --engine vllm-wired --url http://127.0.0.1:8888
+--pair 'name←name'` — token ids ride untouched, the fusion happens inside the
+worker, and nothing but a role crosses the wire. The full road, rehearsal
+scripts and byte-exact identity proof included, is
+[`road-b/`](road-b/README.md) — and the wire itself, the one thing still to
+be fitted, has its map in [`road-b/train_handoff.md`](road-b/train_handoff.md).
+
 ## The fuser, in one screen
 
 The fuser is the neural heart of C2C — three modules, one residual
