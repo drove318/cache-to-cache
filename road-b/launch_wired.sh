@@ -43,7 +43,7 @@ C2C_WIRE="${C2C_WIRE:-}"                       # host path to the .pt wire (GATE
 REPO="${C2C_REPO:-/home/drove/msg/cache-to-cache}"
 WHEEL_DIR="${C2C_WHEEL_DIR:-/tmp/c2c-wheels}"
 NEED_GB="${WIRED_NEED_GB:-55}"
-READY_SECS="${WIRED_READY_SECS:-900}"
+READY_SECS="${WIRED_READY_SECS:-1800}"        # a 524k boot with drafter and graphs is slow, not stale
 VENVPY="${C2C_VENV:-/home/drove/c2c-venv}/bin/python"
 DRY_RUN="${DRY_RUN:-0}"
 LOCK=/tmp/c2c-launch-wired.lock
@@ -53,6 +53,17 @@ die() { printf '[launch-wired] refuse: %s\n' "$*" >&2; exit 1; }
 
 # one launch mid-flight, ever: an overlapping pair is how a wired husk
 # once passed for the plain and a launch served garbage argv
+speak_probe() {                                  # the readiness that means something: a token, in choices
+    curl -s -m 30 "http://127.0.0.1:${PORT}/v1/completions" \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"${JSON_ARGS[0]}\",\"prompt\":\"ping\",\"max_tokens\":1,\"temperature\":0}" |
+        "$VENVPY" -c 'import json,sys
+try:
+    raise SystemExit(0 if json.load(sys.stdin).get("choices") else 1)
+except (AttributeError, ValueError):
+    raise SystemExit(1)' 2>/dev/null
+}
+
 mkdir "$LOCK" 2>/dev/null || die "another launch is mid-flight ($LOCK exists); if none is running, rmdir it"
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
@@ -186,7 +197,13 @@ fi
 # never rm a parked original unseen: a stale -plain is evidence of an
 # earlier race, and evidence is examined, not deleted
 if docker inspect "$PLAIN_NAME" >/dev/null 2>&1; then
-    die "${PLAIN_NAME} already exists — a parked original from an earlier run; inspect it (Cmd[0]=$(cmd_of "$PLAIN_NAME")) and, when you are sure it is spent, remove it by hand"
+    # the name from an earlier run: examine it, then sweep it if it is what it claims
+    if is_clean_cert "$PLAIN_NAME" || is_poisoned "$PLAIN_NAME"; then
+        say "the parked ${PLAIN_NAME} is examined (Cmd[0]=$(cmd_of "$PLAIN_NAME") entrypoint=$(entrypoint_of "$PLAIN_NAME")) and found to be a husk of an earlier run; sweeping"
+        docker rm -f "$PLAIN_NAME" >/dev/null 2>&1 || true
+    else
+        die "${PLAIN_NAME} already exists and answers to neither the plain nor a husk (Cmd[0]=$(cmd_of "$PLAIN_NAME") entrypoint=$(entrypoint_of "$PLAIN_NAME")) — inspect it by hand before this script touches it"
+    fi
 fi
 docker stop "$CONTAINER" >/dev/null
 AVAIL_GB=$(free -g | awk '/^Mem:/{print $7}')
@@ -219,10 +236,20 @@ trap ROLLBACK ERR
 say "awaiting health on :${PORT} (cold start is minutes, not seconds)"
 for ((t = 0; t < READY_SECS; t += 10)); do
     if curl -s -m 5 -o /dev/null "http://127.0.0.1:${PORT}/health" 2>/dev/null; then
+        say "health answered; the engine warms for minutes — awaiting the first token"
+        for ((p = 0; p < READY_SECS; p += 15)); do
+            speak_probe && break
+            sleep 15
+        done
+        if ! speak_probe; then
+            say "the HTTP loop answers but the engine speaks no token — showing its words:"
+            docker logs --tail 20 "$WIRED_NAME" 2>&1 | sed -e 's/^/[wired] /' || true
+            false
+        fi
         if [ "$GATE" = open ]; then
-            say "health is up; the wire is mounted and the gate is open"
+            say "health is up and a token has been spoken; the wire is mounted and the gate is open"
         else
-            say "health is up; the gate is closed — the identity must hold, word for word"
+            say "health is up and a token has been spoken; the gate is closed — the identity must hold, word for word"
         fi
         say "next: road-b/identity_proof.sh verify"
         rm -f "$ENV_FILE"
