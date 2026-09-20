@@ -136,11 +136,24 @@ class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
 
     # -- worker side: where the rows live ───────────────────────────────────
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]) -> None:
-        """Take the live paged buffers; mount the wire unless told closed."""
+        """Take the live paged buffers; mount the wire unless told closed.
+
+        The bases own bookkeeping is the engines, not ours: if the base
+        refuses the cards, the connector closes its gate and the receiver
+        answers from its own cache — a faulted registration is a card that
+        disagrees, and a card that disagrees fails closed, not fatal.
+        """
         try:
             super().register_kv_caches(kv_caches)
         except AttributeError:
             pass  # a base that keeps no ledger of its own
+        except Exception as exc:
+            self.log.error(
+                "the base would not keep the cards (%s: %s): serving the identity",
+                exc.__class__.__name__,
+                exc,
+            )
+            self.gate = GATE_CLOSED
         self._cards = dict(kv_caches)
         if self.wire is None and self.gate != GATE_CLOSED:
             self._build_wire()
@@ -255,6 +268,33 @@ class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
 
     def request_finished(self, request_id: str, **kwargs: Any) -> None:
         self.staging.pop(str(request_id), None)
+
+    def request_finished_all_groups(
+        self, request: Any, block_ids: tuple[list[int], ...], **kwargs: Any
+    ) -> tuple[bool, Any]:
+        """All groups finished at once: the wire holds copies, never the engines blocks.
+
+        Called exactly once per request, after every kv-cache group has
+        finished and before its blocks are freed. The wire never claims
+        the freedom to free late — it returns False and the engine frees
+        now — and it sheds this requests staged rows, the same bookkeeping
+        that rides in ``request_finished``.
+        """
+        req_id = str(getattr(request, "request_id", "") or "")
+        if req_id:
+            self.staging.pop(req_id, None)
+        return False, None
+
+    def update_state_after_alloc(
+        self, request: Any, blocks: Any, num_external_tokens: int, **kwargs: Any
+    ) -> None:
+        """An allocation was made; the wire noticed, and changed nothing.
+
+        The wire prefills every token itself (``get_num_new_matched_tokens``
+        returns 0, False until the identity proof has earned a shortcut),
+        so the allocation of blocks alters none of its state.
+        """
+        return None
 
     # -- manners ────────────────────────────────────────────────────────────
     def _faulty(self, side: str, layer: str, exc: Exception) -> None:

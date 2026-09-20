@@ -40,10 +40,13 @@ ask() {                                   # $1 index -> stdout, the servers text
     curl -s -m 180 "http://127.0.0.1:${PORT}/v1/completions" \
         -H 'Content-Type: application/json' -d "$body" |
         "$PY" -c 'import json,sys
+raw = sys.stdin.read()
+if not raw.strip():
+    sys.stderr.write("no body at all (the server is down or still booting)\n"); raise SystemExit(4)
 try:
-    print(json.load(sys.stdin)["choices"][0]["text"], end="")
-except (KeyError, ValueError) as exc:
-    sys.stderr.write(f"the server answered without text: {exc}\n"); raise SystemExit(3)'
+    print(json.loads(raw)["choices"][0]["text"], end="")
+except (KeyError, IndexError, ValueError) as exc:
+    sys.stderr.write(f"the server answered without a choices list: {exc}\n"); raise SystemExit(3)'
 }
 
 case "$ACT" in
@@ -57,7 +60,16 @@ case "$ACT" in
         ;;
     verify)
         [ -f "${BASE}/b0_0.ans" ] || { echo "[identity] no baseline at ${BASE} — run the baseline act against the plain server first" >&2; exit 1; }
-        echo "[identity] verify: replay against the wired server at :${PORT}"
+        echo "[identity] verify: awaiting the server at :${PORT} (cold starts are minutes, not seconds)"
+        for ((w = 0; w < ${READY_SECS:-900}; w += 10)); do
+            curl -s -m 5 -o /dev/null "http://127.0.0.1:${PORT}/health" 2>/dev/null && break
+            sleep 10
+        done
+        curl -s -m 5 -o /dev/null "http://127.0.0.1:${PORT}/health" 2>/dev/null || {
+            echo "[identity] nothing answers on :${PORT} after $(( ${READY_SECS:-900} / 60 )) minutes — is the server up? (docker ps)" >&2
+            exit 1
+        }
+        echo "[identity] the server speaks; replaying six greedy faces against the baseline"
         fails=0
         for i in "${!PROMPTS[@]}"; do
             ask "$i" > "${BASE}/wired_${i}.ans" || { echo "  ${i}  FAILED (the server would not answer)"; fails=$((fails + 1)); continue; }

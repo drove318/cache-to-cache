@@ -198,12 +198,18 @@ docker rename "$CONTAINER" "$PLAIN_NAME"
 say "plain container parked as ${PLAIN_NAME}"
 
 ROLLBACK() {
-    say "the wired server did not come up — rolling back to the plain one"
+    say "the wired server did not come up — the evidence first, the rollback second"
+    local archive="$REPO/road-b/logs/wired-failure-$(date +%Y%m%d-%H%M%S).log"
+    mkdir -p "$REPO/road-b/logs"
+    if docker logs "$WIRED_NAME" > "$archive" 2>&1; then
+        say "the full log, root cause and all, kept at ${archive} — its head speaks:"
+        head -n 60 "$archive" | sed -e 's/^/[wired] /' || true
+    fi
     docker rm -f "$WIRED_NAME" >/dev/null 2>&1 || true
     docker start "$PLAIN_NAME" >/dev/null 2>&1 || true
     docker rename "$PLAIN_NAME" "$CONTAINER" 2>/dev/null || true
     rm -f "$ENV_FILE"
-    die "wired launch failed; the plain server is back under its name"
+    die "wired launch failed; the plain server is back under its name, the log above is filed"
 }
 trap ROLLBACK ERR
 
@@ -225,5 +231,4 @@ for ((t = 0; t < READY_SECS; t += 10)); do
     fi
     sleep 10
 done
-docker logs --tail 25 "$WIRED_NAME" 2>&1 | sed -e 's/^/[wired] /' || true
-false                                              # trip the rollback
+false                                              # trips ROLLBACK: it archives, prints the head, restores the plain

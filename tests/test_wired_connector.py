@@ -20,6 +20,7 @@ The four proofs, in the order the milestone demands them:
 
 from __future__ import annotations
 
+import abc
 import importlib
 import sys
 import tempfile
@@ -40,14 +41,31 @@ _VLLM_STUBS = (
 _CONNECTOR = "c2c.integrations.vllm_wired.connector"
 
 
-class _StubBase:
-    """All the base class a connector under test may call."""
+class _StubBase(abc.ABC):
+    """The base a connector under test may call — as stern as the engines are.
+
+    The real base demands its abstractmethods; a stub that flatters lets every
+    connector sin pass unseen. The debts here are the real ones, verbatim.
+    """
 
     def __init__(self, vllm_config, role, kv_cache_config):
         self.vllm_config, self.role, self.kv_cache_config = vllm_config, role, kv_cache_config
 
     def register_kv_caches(self, kv_caches):
         return None
+
+    @abc.abstractmethod
+    def start_load_kv(self, forward_context, **kwargs): ...
+
+    @abc.abstractmethod
+    def update_state_after_alloc(self, request, blocks, num_external_tokens): ...
+
+
+class _StubMarker(abc.ABC):
+    """The HMA marker, demanding of its one abstract method, as the real one does."""
+
+    @abc.abstractmethod
+    def request_finished_all_groups(self, request, block_ids): ...
 
 
 class _Req:
@@ -73,7 +91,7 @@ def wired():
         sys.modules[name] = pytypes.ModuleType(name)
     stub_base = sys.modules[_VLLM_STUBS[-1]]
     stub_base.KVConnectorBase_V1 = _StubBase
-    stub_base.SupportsHMA = type("_StubMarker", (), {})
+    stub_base.SupportsHMA = _StubMarker
     try:
         yield importlib.import_module(_CONNECTOR)
     finally:
@@ -230,3 +248,47 @@ def test_c2c_of_follows_the_engines_own_ferry(wired):
     assert as_dict == {"role": "receiver"}
     assert wired._c2c_of(_ns(extra_args={})) is None
     assert wired._c2c_of(None) is None
+
+
+def test_the_class_boots_and_the_stubs_do_not_flatter(wired):
+    """The net that missed a TypeError at the engines gate, cut once and for all.
+
+    An ABC base with unmet abstractmethods is uninstantiable, and the engine
+    builds its connector at core init — so a debt inherited is a server dead.
+    The assertion is the gate; the construction, the proof it opens.
+    """
+    assert wired.C2CWiredConnector.__abstractmethods__ == frozenset()
+    cfg = _ns(
+        kv_transfer_config=_ns(kv_connector_extra_config={"c2c_gate": "closed"}),
+        cache_config=_ns(block_size=4),
+        model_config=_ns(text_config=_ns()),
+    )
+    conn = wired.C2CWiredConnector(cfg, _ns(), _ns())
+    assert conn.gate == "closed"
+    assert conn.request_finished_all_groups(_ns(request_id="gone"), ([1], [2])) == (False, None)
+
+
+def test_a_refused_ledger_degrades_to_the_identity(wired, monkeypatch):
+    """The base refusing its bookkeeping is a card that disagrees: closed gate, alive worker.
+
+    Before the hardening, any exception from the bases register_kv_caches
+    propagated into the workers init and the whole engine core died at
+    boot — the very failure mode the launcher must never turn into a
+    downtime. Now the fault is logged, the gate falls, the receiver speaks
+    from its own cache.
+    """
+
+    def _refuse(self, kv_caches):
+        raise RuntimeError("the base keeps no ledger for cards like these")
+
+    monkeypatch.setattr(_StubBase, "register_kv_caches", _refuse)
+    cfg = _ns(
+        kv_transfer_config=_ns(kv_connector_extra_config={"c2c_gate": "wire"}),
+        cache_config=_ns(block_size=4),
+        model_config=_ns(text_config=_ns()),
+    )
+    conn = wired.C2CWiredConnector(cfg, _ns(), _ns())
+    conn.register_kv_caches({"model.layers.0.self_attn": torch.zeros(2, 2, 4, 2, 4)})
+    assert conn.gate == wired.GATE_CLOSED  # closed, not dead
+    assert conn.wire is None  # no mount attempted on a refused card
+    conn.wait_for_layer_load("model.layers.0.self_attn")  # the path, walkable and silent

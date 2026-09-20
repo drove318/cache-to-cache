@@ -33,6 +33,21 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
   fp8 kernels are a value without a gradient, the unified pool holds no
   second model, and the wire must wear the servers geometry.
 
+### Fixed
+- The wired connector carried two abstract debts it had never paid:
+  `request_finished_all_groups` (the HMA marker) and `update_state_after_alloc`
+  (the base). Python will not build a class in debt to its contract — the
+  factorys `connector_cls(...)` raised TypeError and the engine core died at
+  init before a single token was scored. Both are paid at the letters of the
+  base (the wire holds copies, never the engines blocks: `False, None`); the
+  test stubs now demand the same abstractmethods the real bases do, so a
+  debt shows in the suite, not at two in the morning. The class is proved
+  instantiable on the containers own interpreter, under the real bases,
+  before any launch replays it.
+- A base that refuses the cards no longer kills the worker: registration
+  failure logs the fault, closes the gate, and the receiver answers from its
+  own cache — fail closed, never fatal.
+
 ## [1.0.0] — the first public release (roadmap, per the specification's M6)
 
 ### Added

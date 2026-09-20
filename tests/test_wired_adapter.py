@@ -179,9 +179,7 @@ class TestTheFrontKeepsItsWord:
         hub.set_engine("vllm-wired")
         from c2c.serve.openai_proxy import _register_cli_pairs
 
-        _register_cli_pairs(
-            hub, ["receiver-model←receiver-model"], engine="vllm-wired", url=server
-        )
+        _register_cli_pairs(hub, ["receiver-model←receiver-model"], engine="vllm-wired", url=server)
         result = ChatPipeline(hub=hub).complete(
             model="c2c/receiver-model←receiver-model",
             prompt_text="ab",
