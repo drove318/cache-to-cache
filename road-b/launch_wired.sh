@@ -11,6 +11,10 @@
 # that drops one boots a DIFFERENT engine, and the answers drift with no
 # ones word. The inspect, or nothing.
 #
+# DRY_RUN=1  — every read, every build, every flag; then the exact docker
+#              run line, printed, and the script stops before it touches a
+#              container. The rehearsal, on paper, with the real parts.
+#
 # Gates:
 #   GATE=closed  (the default) the connector rides but never touches a row:
 #                every answer must stay byte-identical. This is the B0 proof.
@@ -18,13 +22,14 @@
 #                With no wire the connector serves the identity and says so.
 #
 # Rollback: the plain container is renamed, never removed. If the wired
-# one does not reach health, this script stops it and brings the plain one
-# back under its own name.
+# one does not reach health, this script stops it and brings the plain
+# one back under its own name.
 #
 # The preflight refuses to start into a committed box — the same law the
 # sibling servers script lives by: GB10 memory is ONE unified pool; the
 # research-loop watchdog keeps a competing server on :8000, and the two
-# together are how the box — and the desktop — die.
+# together are how the box — and the desktop — die. The pool is measured
+# after the plain server is stopped, for that is the hour it matters.
 set -euo pipefail
 
 CONTAINER="${WIRED_CONTAINER:-vllm-fn-tp1}"
@@ -36,8 +41,9 @@ C2C_WIRE="${C2C_WIRE:-}"                       # host path to the .pt wire (GATE
 REPO="${C2C_REPO:-/home/drove/msg/cache-to-cache}"
 WHEEL_DIR="${C2C_WHEEL_DIR:-/tmp/c2c-wheels}"
 NEED_GB="${WIRED_NEED_GB:-55}"
-READY_SECS="${WIRED_READY_SECS:-600}"
+READY_SECS="${WIRED_READY_SECS:-900}"
 VENVPY="${C2C_VENV:-/home/drove/c2c-venv}/bin/python"
+DRY_RUN="${DRY_RUN:-0}"
 
 say() { printf '[launch-wired] %s\n' "$*"; }
 die() { printf '[launch-wired] refuse: %s\n' "$*" >&2; exit 1; }
@@ -52,9 +58,6 @@ fi
 if ss -tln 2>/dev/null | grep -q ':8000 '; then
     die "something already answers on :8000 — the research-loop watchdog keeps a server there on this boxs one memory pool; stop the competitor (systemctl --user stop 'research-loop*'; pkill -f 'vllm serve.*8000') and rerun"
 fi
-AVAIL_GB=$(free -g | awk '/^Mem:/{print $7}')
-[ "$AVAIL_GB" -ge "$NEED_GB" ] ||
-    die "only ${AVAIL_GB} GiB free; the server claims more of the unified pool than that leaves. what holds it? (docker ps; systemctl --user list-units)"
 
 # ── the wheel: built fresh from the checkout, mounted in read-only ────────
 mkdir -p "$WHEEL_DIR"
@@ -70,12 +73,38 @@ IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER")
 [ -n "$IMAGE" ] || die "inspecting ${CONTAINER} gave no image"
 mapfile -t JSON_ARGS < <(docker inspect -f '{{join .Config.Cmd "\n"}}' "$CONTAINER")
 [ "${#JSON_ARGS[@]}" -gt 1 ] || die "the containers argv read empty; refusing to relaunch a server I cannot see"
-mapfile -t BINDS < <(docker inspect -f '{{range .HostConfig.Binds}}{{.}}{{"\n"}}{{end}}' "$CONTAINER")
+
+# binds: one --volume= flag each, empty lines (the templaters own trailing
+# newline) filtered at the gate they arrive through.
+BINDS=()
+while IFS= read -r b; do
+    [ -n "$b" ] && BINDS+=("--volume=$b")
+done < <(docker inspect -f '{{range .HostConfig.Binds}}{{.}}{{"\n"}}{{end}}' "$CONTAINER")
+say "binds: ${#BINDS[@]} carried, engine patches included"
+
 NET=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$CONTAINER")
 IPC=$(docker inspect -f '{{.HostConfig.IpcMode}}' "$CONTAINER")
 SHM=$(docker inspect -f '{{.HostConfig.ShmSize}}' "$CONTAINER")
+
+# env: the image re-applies its own Config.Env at run time; what must ride
+# the file are the operators creation-time overrides (HF offline, PLE
+# paths). Anything carrying an embedded newline is left to the image —
+# --env-file cannot speak one — and named, so the choice is on the record.
 ENV_FILE=$(mktemp /tmp/c2c-wired-env.XXXXXX)
-docker inspect -f '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$CONTAINER" > "$ENV_FILE"
+: > "$ENV_FILE"
+declare -A IN_IMAGE=()
+while IFS= read -r e; do [ -n "$e" ] && IN_IMAGE["$e"]=1; done \
+    < <(docker inspect -f '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$IMAGE")
+n_over=0
+while IFS= read -r e; do
+    [ -n "$e" ] || continue
+    [ -n "${IN_IMAGE[$e]+x}" ] && continue                    # the image carries it true
+    case "$e" in
+        (*$'\n'*) say "note: ${e%%=*} carries a newline and the image has its own copy; the image speaks for it" ;;
+        (*) printf '%s\n' "$e" >> "$ENV_FILE"; n_over=$((n_over + 1)) ;;
+    esac
+done < <(docker inspect -f '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$CONTAINER")
+say "env: ${n_over} creation-time overrides ride; the rest is the images own"
 
 # ── the one addition: the wire in the workers connector slot ───────────────
 WIRE_IN=""
@@ -83,10 +112,33 @@ WIRE_IN=""
 WIRE_JSON=""
 [ -n "$WIRE_IN" ] && WIRE_JSON=", \"c2c_wire\": \"${WIRE_IN}\""
 KV_JSON="{\"kv_connector\": \"C2CWiredConnector\", \"kv_connector_module_path\": \"c2c.integrations.vllm_wired.connector\", \"kv_role\": \"kv_both\", \"kv_connector_extra_config\": {\"c2c_gate\": \"${GATE}\"${WIRE_JSON}}}"
-say "kv-transfer-config: ${KV_JSON}"
+KV_QUOTED=${KV_JSON//\'/\'\\\'\'}
+CMD_LINE="python3 -m pip install --no-index --no-deps /c2c/${WHEEL_NAME} && exec vllm serve $(printf '%q ' "${JSON_ARGS[@]}")--kv-transfer-config '${KV_QUOTED}'"
+WIRE_BIND=()
+[ -n "$C2C_WIRE" ] && WIRE_BIND=(-v "${C2C_WIRE}:${WIRE_IN}:ro")
 
-# ── park the plain one; raise the wired one in its name ────────────────────
+DOCKER_RUN=(docker run -d --name "$WIRED_NAME"
+    --network "$NET" --ipc "$IPC" --shm-size "$SHM"
+    --gpus all --env-file "$ENV_FILE"
+    "${BINDS[@]}"
+    -v "${WHEEL_DIR}:/c2c:ro" "${WIRE_BIND[@]}"
+    "$IMAGE" sh -c "$CMD_LINE")
+
+if [ "$DRY_RUN" = 1 ]; then
+    say "DRY_RUN: nothing was touched. The line that would run:"
+    printf '  %q ' "${DOCKER_RUN[@]}"
+    printf '\n'
+    say "and after it: road-b/identity_proof.sh verify"
+    exit 0
+fi
+
+# ── park the plain one; raise the wired one in its name ───────────────────
 docker stop "$CONTAINER" >/dev/null
+AVAIL_GB=$(free -g | awk '/^Mem:/{print $7}')
+if [ "$AVAIL_GB" -lt "$NEED_GB" ]; then
+    docker start "$CONTAINER" >/dev/null
+    die "even with the plain server stopped only ${AVAIL_GB} GiB answer on the pool (need ${NEED_GB}): something else holds it — (docker ps; systemctl --user list-units | grep -i running; pgrep -af 'vllm serve')"
+fi
 if docker inspect "$PLAIN_NAME" >/dev/null 2>&1; then docker rm -f "$PLAIN_NAME" >/dev/null; fi
 docker rename "$CONTAINER" "$PLAIN_NAME"
 say "plain container parked as ${PLAIN_NAME}"
@@ -101,18 +153,7 @@ ROLLBACK() {
 }
 trap ROLLBACK ERR
 
-# ── the launch: verbatim argv, plus the connector ──────────────────────────
-KV_QUOTED=${KV_JSON//\'/\'\\\'\'}                   # single-quote fortress for the inner shell
-CMD_LINE="pip install --no-index --no-deps /c2c/${WHEEL_NAME} && exec vllm serve $(printf '%q ' "${JSON_ARGS[@]}")--kv-transfer-config '${KV_QUOTED}'"
-WIRE_BIND=()
-[ -n "$C2C_WIRE" ] && WIRE_BIND=(-v "${C2C_WIRE}:${WIRE_IN}:ro")
-
-docker run -d --name "$WIRED_NAME" \
-    --network "$NET" --ipc "$IPC" --shm-size "$SHM" \
-    --gpus all --env-file "$ENV_FILE" \
-    "${BINDS[@]/#/--volume }" \
-    -v "${WHEEL_DIR}:/c2c:ro" "${WIRE_BIND[@]}" \
-    "$IMAGE" sh -c "$CMD_LINE" >/dev/null
+"${DOCKER_RUN[@]}" >/dev/null
 
 # ── the promise the runbook swears by: health before word ─────────────────
 say "awaiting health on :${PORT} (cold start is minutes, not seconds)"
@@ -123,7 +164,7 @@ for ((t = 0; t < READY_SECS; t += 10)); do
         else
             say "health is up; the gate is closed — the identity must hold, word for word"
         fi
-        say "next: road-b/identity_proof.sh"
+        say "next: road-b/identity_proof.sh verify"
         rm -f "$ENV_FILE"
         trap - ERR
         exit 0
