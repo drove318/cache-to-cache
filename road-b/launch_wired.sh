@@ -56,7 +56,7 @@ die() { printf '[launch-wired] refuse: %s\n' "$*" >&2; exit 1; }
 speak_probe() {                                  # the readiness that means something: a token, in choices
     curl -s -m 30 "http://127.0.0.1:${PORT}/v1/completions" \
         -H 'Content-Type: application/json' \
-        -d "{\"model\":\"${JSON_ARGS[0]}\",\"prompt\":\"ping\",\"max_tokens\":1,\"temperature\":0}" |
+        -d "{\"model\":\"${SERVED_MODEL}\",\"prompt\":\"ping\",\"max_tokens\":1,\"temperature\":0}" |
         "$VENVPY" -c 'import json,sys
 try:
     raise SystemExit(0 if json.load(sys.stdin).get("choices") else 1)
@@ -139,6 +139,14 @@ IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER")
 [ -n "$IMAGE" ] || die "inspecting ${CONTAINER} gave no image"
 mapfile -t JSON_ARGS < <(docker inspect -f '{{join .Config.Cmd "\n"}}' "$CONTAINER")
 [ "${#JSON_ARGS[@]}" -gt 1 ] || die "the containers argv read empty; refusing to relaunch a server I cannot see"
+
+# The name the model answers to. vLLM serves under --served-model-name;
+# a probe to the raw snapshot path gets 404 — the token-wait learned
+# that the hard way, twenty times, on a server that was speaking all along
+SERVED_MODEL="${JSON_ARGS[0]}"
+for ((j = 0; j < ${#JSON_ARGS[@]} - 1; j++)); do
+    [ "${JSON_ARGS[j]}" = "--served-model-name" ] && SERVED_MODEL="${JSON_ARGS[j+1]}"
+done
 
 BINDS=()
 while IFS= read -r b; do
