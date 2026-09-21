@@ -67,6 +67,9 @@ class _StubMarker(abc.ABC):
     @abc.abstractmethod
     def request_finished_all_groups(self, request, block_ids): ...
 
+class _StubMeta(abc.ABC):
+    """The metadata base: as plain as the engines make it, and no less."""
+
 
 class _Req:
     def __init__(self, request_id, slot_mapping, c2c):
@@ -91,6 +94,7 @@ def wired():
         sys.modules[name] = pytypes.ModuleType(name)
     stub_base = sys.modules[_VLLM_STUBS[-1]]
     stub_base.KVConnectorBase_V1 = _StubBase
+    stub_base.KVConnectorMetadata = _StubMeta
     stub_base.SupportsHMA = _StubMarker
     try:
         yield importlib.import_module(_CONNECTOR)

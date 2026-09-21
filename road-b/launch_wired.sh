@@ -244,6 +244,18 @@ trap ROLLBACK ERR
 say "awaiting health on :${PORT} (cold start is minutes, not seconds)"
 for ((t = 0; t < READY_SECS; t += 10)); do
     if curl -s -m 5 -o /dev/null "http://127.0.0.1:${PORT}/health" 2>/dev/null; then
+        say "health answered; awaiting the connectors on both sides (the 'Creating v1 connector' line, twice)"
+        born=0
+        for ((c = 0; c < READY_SECS; c += 10)); do
+            born=$(docker logs "$WIRED_NAME" 2>&1 | grep -c "Creating v1 connector" || true)
+            [ "$born" -ge 2 ] && break
+            sleep 10
+        done
+        [ "${born:-0}" -ge 2 ] || {
+            say "the connectors were not born within $(( READY_SECS / 60 )) minutes — the pings would fall through to the Worker's assertion"
+            docker logs --tail 20 "$WIRED_NAME" 2>&1 | sed -e 's/^/[wired] /' || true
+            false
+        }
         say "health answered; the engine warms for minutes — awaiting the first token"
         for ((p = 0; p < READY_SECS; p += 15)); do
             speak_probe && break

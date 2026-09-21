@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -49,6 +50,7 @@ from .resident import WIRE_ENV, ResidentWire
 try:
     from vllm.distributed.kv_transfer.kv_connector.v1.base import (
         KVConnectorBase_V1,
+        KVConnectorMetadata,
         SupportsHMA,
     )
 except ModuleNotFoundError:
@@ -71,13 +73,31 @@ except ModuleNotFoundError:
         class _NoMarker:
             """The stand-in marker: the host has no HMA to answer for."""
 
-        return _NoEngine, _NoMarker
+        class _NoMeta:
+            """The stand-in bundle: the host has no metadata to hand back."""
 
-    KVConnectorBase_V1, SupportsHMA = _no_engine_bases()
+        return _NoEngine, _NoMarker, _NoMeta
 
-__all__ = ["C2CWiredConnector", "GATE_CLOSED", "GATE_OPEN", "GATE_WIRE"]
+    KVConnectorBase_V1, SupportsHMA, KVConnectorMetadata = _no_engine_bases()
+
+__all__ = ["C2CWiredConnector", "C2CConnectorMetadata", "GATE_CLOSED", "GATE_OPEN", "GATE_WIRE"]
 
 GATE_CLOSED, GATE_OPEN, GATE_WIRE = "closed", "open", "wire"
+
+
+@dataclass
+class C2CConnectorMetadata(KVConnectorMetadata):
+    """The bundle the scheduler ferries to the Worker's pre_forward.
+
+    The Workers pre_forward asserts the bundle non-None — so the build
+    is total: the empty bundle when the step carries no c2c (the probes
+    pings, the provers faces — all plain), the stamped roles when it
+    does. The Workers readers (save_kv_layer, start_load_kv) find the
+    requests themselves on the list, where _c2c_of does the ferry
+    through the extra_args of the completion protocol.
+    """
+
+    requests: list = field(default_factory=list)
 
 
 class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
@@ -102,24 +122,49 @@ class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
         self.wire: ResidentWire | None = None
         self._cards: dict[str, torch.Tensor] = {}
         self._faults = 0
+        self._requests_by_id: dict[str, Any] = {}
 
     # -- scheduler side: the role rides with the request ────────────────────
-    def build_connector_meta(self, request: Any = None, **kwargs: Any) -> dict | None:
-        """Stamp the request's C2C role onto the per-request connector meta.
+    def on_new_request(self, request: Any) -> None:
+        """Keep the requests by id: the build looks them up later.
 
-        The front puts ``{"c2c": {"role": "sharer", "pair": …, "peer":
-        …}}`` in the extra body; the scheduler hands it to us here, and
-        the worker reads it back off ``request.c2c``.
+        The scheduler tells us of each request as it admits it (bases
+        hook, otherwise a no-op), so the build can scan the steps
+        scheduled batch for the c2c roles without the Workers slot being
+        bound in the meantime.
         """
-        c2c = _c2c_of(request)
-        if not c2c:
-            return None
-        return {
-            "role": str(c2c.get("role") or ""),
-            "pair": str(c2c.get("pair") or ""),
-            "peer": str(c2c.get("peer") or ""),
-            "self_req": str(getattr(request, "request_id", "") or c2c.get("self_req") or ""),
-        }
+        req_id = str(getattr(request, "request_id", "") or "")
+        if req_id:
+            self._requests_by_id[req_id] = request
+
+    def build_connector_meta(
+        self, scheduler_output: Any = None, **kwargs: Any
+    ) -> C2CConnectorMetadata:
+        """Bundle the c2c roles of this step, and always hand back the bundle.
+
+        The engine calls us once per step with the whole scheduler_output,
+        and the Workers pre_forward asserts the result non-None — so the
+        build is total, as the engines own example connector makes its
+        meta: the empty bundle when the step has no c2c to carry, the
+        requests that ride the wire otherwise. The roles ride in each
+        requests extra body (the completion protocols ferry); the requests
+        themselves we keep by id in ``on_new_request``, so the Workers
+        readers find them whole.
+        """
+        bundle = C2CConnectorMetadata()
+        if scheduler_output is None:
+            return bundle
+        for new_req in getattr(scheduler_output, "scheduled_new_reqs", None) or []:
+            req = self._requests_by_id.get(str(getattr(new_req, "req_id", "") or "")) or new_req
+            if _c2c_of(req):
+                bundle.requests.append(req)
+        cached = getattr(scheduler_output, "scheduled_cached_reqs", None)
+        for req_id in getattr(cached, "req_ids", None) or []:
+            req = self._requests_by_id.get(str(req_id))
+            if req is None or not _c2c_of(req):
+                continue
+            bundle.requests.append(req)
+        return bundle
 
     def get_num_new_matched_tokens(
         self, request: Any, num_computed_tokens: int
@@ -264,10 +309,12 @@ class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
     def get_finished(self, finished_req_ids: set[str]) -> tuple[set[str] | None, set[str] | None]:
         for req in finished_req_ids:
             self.staging.pop(req, None)
+            self._requests_by_id.pop(req, None)
         return None, None
 
     def request_finished(self, request_id: str, **kwargs: Any) -> None:
         self.staging.pop(str(request_id), None)
+        self._requests_by_id.pop(str(request_id), None)
 
     def request_finished_all_groups(
         self, request: Any, block_ids: tuple[list[int], ...], **kwargs: Any
@@ -283,6 +330,7 @@ class C2CWiredConnector(KVConnectorBase_V1, SupportsHMA):
         req_id = str(getattr(request, "request_id", "") or "")
         if req_id:
             self.staging.pop(req_id, None)
+            self._requests_by_id.pop(req_id, None)
         return False, None
 
     def update_state_after_alloc(
