@@ -47,7 +47,10 @@ class VLLMWiredAdapter(EngineAdapter):
 
     engine_name = "vLLM (wired)"
     required_extra = None  # the engine lives next door, reached over http
-    TOOLS = "ignored"  # the completions route has no tools arm; we accept and drop
+    TOOLS = "chat"  # the completions route has no tools arm; when tools ride, the
+                    # receiver's leg switches to /v1/chat/completions and the served
+                    # model answers in kind (native tool_calls), rather than have the
+                    # model fall back on the caller's stack and imitate the call as prose
     DEGRADATION_IF = (
         "the server was launched without a wire: the connector serves the "
         "identity and the pair answers as the receiver alone"
@@ -163,35 +166,43 @@ class VLLMWiredAdapter(EngineAdapter):
         temperature: float = 0.0,
         top_p: float | None = None,
         stop=None,
-        tools=None,  # noqa: ARG002 — the ABI's arm, dropped in good faith
-    ) -> str:
+        tools=None,
+        messages=None,  # the harness's array; only the chat road reads it
+    ) -> str | dict:
         ids = [int(t) for t in prompt_tokens]
-        if self.role != "receiver" or not self.peer_model:
+        stamp = None
+        if self.role == "receiver" and self.peer_model:
+            pair = uuid.uuid4().hex[:12]
+            sharer_req = f"c2c-s-{uuid.uuid4().hex[:10]}"
+            self.log.info("pair %s: the sharer %r prefills its half", pair, self.peer_model)
+            self._post(
+                "/v1/completions",
+                {
+                    "model": self.peer_model,
+                    "prompt": ids,
+                    "max_tokens": 1,
+                    "temperature": 0.0,
+                    "kv_transfer_params": {
+                        "c2c": {"role": "sharer", "pair": pair, "self_req": sharer_req},
+                    },
+                },
+            )
+            stamp = {"role": "receiver", "pair": pair, "peer": sharer_req}
+        if tools and messages:
+            # the chat road: the tools array and the messages ride all the way
+            # in to the container's chat endpoint, which applies its own tool
+            # parser and brings back the structure — rather than have the model
+            # fall back on prose imitation, the harness sees the calls itself
+            self.log.info(
+                "the receiver %r speaks over the chat road, the tools ride in",
+                self.model_id,
+            )
+            return self._chat(messages, tools, max_new_tokens, temperature, stop, stamp)
+        if stamp is None:
             # no pair, no pretense: the receiver answers from its own cache alone
             return self._complete(ids, max_new_tokens, temperature, stop)
-        pair = uuid.uuid4().hex[:12]
-        sharer_req = f"c2c-s-{uuid.uuid4().hex[:10]}"
-        self.log.info("pair %s: the sharer %r prefills its half", pair, self.peer_model)
-        self._post(
-            "/v1/completions",
-            {
-                "model": self.peer_model,
-                "prompt": ids,
-                "max_tokens": 1,
-                "temperature": 0.0,
-                "kv_transfer_params": {
-                    "c2c": {"role": "sharer", "pair": pair, "self_req": sharer_req},
-                },
-            },
-        )
         self.log.info("pair %s: the receiver %r speaks, the wire fuses", pair, self.model_id)
-        return self._complete(
-            ids,
-            max_new_tokens,
-            temperature,
-            stop,
-            stamp={"role": "receiver", "pair": pair, "peer": sharer_req},
-        )
+        return self._complete(ids, max_new_tokens, temperature, stop, stamp=stamp)
 
     def _complete(self, ids, max_new_tokens, temperature, stop, stamp=None):
         body = {
@@ -210,6 +221,34 @@ class VLLMWiredAdapter(EngineAdapter):
             if isinstance(text, str):
                 return text
         msg = f"the wired server answered without text: {str(answer)[:200]}"
+        raise RuntimeError(msg)
+
+    def _chat(self, messages, tools, max_new_tokens, temperature, stop, stamp=None):
+        """The chat road: the container's endpoint tokenizes the messages and
+        its tool parser picks out the calls, so the harness gets the structure
+        back rather than a string the model had to imitate.
+        """
+        body = {
+            "model": self.model_id,
+            "messages": list(messages),  # the array rides intact to the container
+            "tools": list(tools),
+            "max_tokens": int(max_new_tokens),
+            "temperature": float(temperature),
+        }
+        if stop:
+            body["stop"] = list(stop)
+        if stamp is not None:
+            body["kv_transfer_params"] = {"c2c": stamp}
+        answer = self._post("/v1/chat/completions", body)
+        for choice in answer.get("choices") or []:
+            message = choice.get("message")
+            if isinstance(message, dict):
+                return {
+                    "content": message.get("content"),
+                    "tool_calls": message.get("tool_calls"),
+                    "finish_reason": choice.get("finish_reason") or "stop",
+                }
+        msg = f"the wired server answered without a message: {str(answer)[:200]}"
         raise RuntimeError(msg)
 
     def close(self) -> None:

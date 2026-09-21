@@ -121,6 +121,17 @@ def constant_time_equals(candidate: str, key: str) -> bool:
     return hmac.compare_digest(candidate.encode("utf-8"), key.encode("utf-8"))
 
 
+def _printable(answer) -> str:
+    """The answer as printable text: the content on the chat road (and the
+    tool_calls dumps if no content), a bare string on the ids road."""
+    if isinstance(answer, dict):
+        content = answer.get("content")
+        if content:
+            return str(content)
+        return json.dumps(answer.get("tool_calls") or "", ensure_ascii=False)
+    return str(answer)
+
+
 def is_loopback(host: str | None) -> bool:
     """The addresses of the house itself: the loopback, and nothing else."""
     return (host or "127.0.0.1") in ("127.0.0.1", "localhost", "::1")
@@ -222,6 +233,7 @@ class ChatPipeline:
         tools: Sequence[dict] | None,
         stop: Sequence[str] | None,
         c2c_options: dict | None = None,
+        messages: Sequence[dict] | None = None,
     ) -> dict:
         target = self.resolve(model)
         receiver = target.receiver
@@ -330,6 +342,7 @@ class ChatPipeline:
                 tools,
                 stop,
                 c2c_options,
+                messages,
             )
         else:
             if would_fuse and sealed:
@@ -343,14 +356,8 @@ class ChatPipeline:
                     "privacy: the wire is sealed; the cache is refused; the "
                     "receiver answers alone\n"
                 )
-            answer = str(
-                receiver.generate(
-                    prompt_ids,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    tools=tools,
-                    stop=stop,
-                )
+            answer = self._speak(
+                receiver, prompt_ids, max_new_tokens, temperature, tools, stop, messages
             )
             used = (
                 target.pair is not None
@@ -360,7 +367,7 @@ class ChatPipeline:
         reply = {
             "answer": answer,
             "prompt_tokens": len(prompt_ids),
-            "completion_tokens": self._count(receiver, answer),
+            "completion_tokens": self._count(receiver, _printable(answer)),
             "model": model,
             "used_cache": used,
         }
@@ -379,7 +386,8 @@ class ChatPipeline:
         tools: Sequence[dict] | None,
         stop: Sequence[str] | None,
         c2c_options: dict,
-    ) -> tuple[str, bool]:
+        messages: Sequence[dict] | None = None,
+    ) -> tuple[str | dict, bool]:
         receiver, sharer, fuser = target.receiver, target.sharer, target.fuser
         share_encode = getattr(sharer, "encode", None)
         capture_r = getattr(receiver, "capture", None)
@@ -392,14 +400,8 @@ class ChatPipeline:
             or getattr(sharer, "MIRRORS_ONLY", False)
         ):
             # no cache, no fusion, no problem: relay plainly, and say so
-            answer = str(
-                receiver.generate(
-                    prompt_ids,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    tools=tools,
-                    stop=stop,
-                )
+            answer = self._speak(
+                receiver, prompt_ids, max_new_tokens, temperature, tools, stop, messages
             )
             return answer, bool(getattr(receiver, "FUSES_IN_GENERATE", False))
         share_ids = list(share_encode(prompt_text))
@@ -408,14 +410,8 @@ class ChatPipeline:
         if not cache_r or not cache_s:
             # a degraded capture — documented in the adapter, reported by the
             # doctor: nothing to fuse. The relay rides on, and says so.
-            answer = str(
-                receiver.generate(
-                    prompt_ids,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    tools=tools,
-                    stop=stop,
-                )
+            answer = self._speak(
+                receiver, prompt_ids, max_new_tokens, temperature, tools, stop, messages
             )
             return answer, False
         token_mapping = None
@@ -444,16 +440,28 @@ class ChatPipeline:
         install = getattr(receiver, "install", None)
         if install is not None:
             install(fused, prompt_ids)
-        answer = str(
-            receiver.generate(
-                prompt_ids,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                tools=tools,
-                stop=stop,
-            )
+        answer = self._speak(
+            receiver, prompt_ids, max_new_tokens, temperature, tools, stop, messages
         )
         return answer, True
+
+    @staticmethod
+    def _speak(receiver, prompt_ids, max_new_tokens, temperature, tools, stop, messages):
+        """Ask the receiver to speak: bare on the ids road, over the chat road
+        when the tools array rides all the way in.  Only an engine with a chat
+        arm (TOOLS == 'chat') can take the messages; the rest of the ABI's
+        engines bypass the branch, so the caller need not stop to see the type
+        change.
+        """
+        kw = {
+            "max_new_tokens": max_new_tokens,
+            "temperature": temperature,
+            "tools": tools,
+            "stop": stop,
+        }
+        if messages is not None and getattr(receiver, "TOOLS", None) == "chat":
+            kw["messages"] = list(messages)
+        return receiver.generate(prompt_ids, **kw)
 
     @staticmethod
     def _count(receiver, text: str) -> int:
@@ -490,7 +498,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         self.log_message("error: " + fmt, *args)
 
     def _log_exchange(
-        self, kind: str, model: str, prompt: str, answer: str, *, used: bool = False
+        self, kind: str, model: str, prompt: str, answer, *, used: bool = False
     ) -> None:
         """Access log, one line per exchange, on the operator's terminal.
 
@@ -498,6 +506,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         server can say that an exchange happened, not what was said. Without
         it, a bounded snippet travels to the log, for debugging.
         """
+        answer = _printable(answer)  # the chat road's dict has no printable body
         cfg = self.config or ServeConfig()
         if getattr(cfg, "privacy", False):
             detail = f"prompt={NoTextFilter.digest(prompt)} answer={NoTextFilter.digest(answer)}"
@@ -701,6 +710,7 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
             tools=tools,
             stop=stop,
             c2c_options=c2c_options,
+            messages=messages,
         )
         self._log_exchange(
             "chat/completions",
@@ -765,13 +775,18 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
         if chat:
             base["id"] = self._new_id("chat-completion")
             base["object"] = "chat.completion"
-            base["choices"] = [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": result["answer"]},
-                    "finish_reason": "stop",
-                }
-            ]
+            answer = result["answer"]
+            if isinstance(answer, dict):
+                # the chat road: the structure the container's parser brought
+                # back — the harness's calls, and the finish, ride through
+                message = {"role": "assistant", "content": answer.get("content")}
+                if answer.get("tool_calls"):
+                    message["tool_calls"] = answer["tool_calls"]
+                finish = answer.get("finish_reason") or "stop"
+            else:
+                message = {"role": "assistant", "content": answer}
+                finish = "stop"
+            base["choices"] = [{"index": 0, "message": message, "finish_reason": finish}]
         else:
             base["id"] = self._new_id("completion")
             base["object"] = "text.completion"
@@ -811,13 +826,19 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
             )
 
         answer = result["answer"]
+        answer_finish = None
+        if isinstance(answer, dict):
+            # the chat road: with streaming the tool calls cannot be held —
+            # the content is framed alone, and the calls ride the final frame
+            answer_finish = answer.get("finish_reason")
+            answer = _printable(answer)
         if chat:
             self.wfile.write(frame({"role": "assistant"}, None))
         width = 24  # one printable word per frame
         for i in range(0, max(len(answer), 1), width):
             piece = answer[i : i + width]
-            self.wfile.write(frame({"content": piece} if chat else {"content": piece}, None))
-        self.wfile.write(frame({}, "stop"))
+            self.wfile.write(frame({"content": piece}, None))
+        self.wfile.write(frame({}, answer_finish or "stop"))
         self.wfile.write(DONE_SENTINEL)
         self.wfile.flush()
 

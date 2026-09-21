@@ -40,11 +40,19 @@ class _Recorder(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(declared).decode("utf-8") or "{}")
         type(self).received.append((self.path, payload))
         if self.path == "/tokenize":
-            text = (payload.get("prompt") or [""])[0]
-            self._say({"tokens": [[ord(ch) for ch in text]]})
+            # the tokenizer answers to the batch or the string alike, and
+            # mirrors the shape of the request back
+            prompt = payload.get("prompt") or ""
+            batch = isinstance(prompt, list)
+            text = prompt[0] if batch else str(prompt)
+            one = [ord(ch) for ch in text]
+            self._say({"tokens": [one] if batch else one})
         elif self.path == "/detokenize":
-            toks = (payload.get("tokens") or [[]])[0]
-            self._say({"text": ["".join(chr(int(t)) for t in toks)]})
+            toks = payload.get("tokens") or []
+            batch = bool(toks) and isinstance(toks[0], list)
+            row = toks[0] if batch else toks
+            text = "".join(chr(int(t)) for t in row)
+            self._say({"text": [text] if batch else text})
         elif self.path == "/v1/completions":
             self._say(
                 {
@@ -54,6 +62,48 @@ class _Recorder(BaseHTTPRequestHandler):
                     ],
                 }
             )
+        elif self.path == "/v1/chat/completions":
+            # the chat road: when the tools array comes in, the container
+            # brings back the structure — the calls, not the prose
+            if payload.get("tools"):
+                self._say(
+                    {
+                        "object": "chat.completion",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": "call-1",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "get_capital",
+                                                "arguments": json.dumps({"country": "France"}),
+                                            },
+                                        }
+                                    ],
+                                },
+                                "finish_reason": "tool_calls",
+                            }
+                        ],
+                    }
+                )
+            else:
+                self._say(
+                    {
+                        "object": "chat.completion",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": "the server spoke"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                    }
+                )
         else:
             self.send_error(404, "no such road")
 
@@ -119,6 +169,32 @@ class TestTheAdaptersOwnHands:
         assert stamp_r["peer"] == stamp_s["self_req"]  # the receiver names its peer
         assert legs[1]["prompt"] == [104, 105]  # ids rode untouched, end to end
         assert answer.startswith("the server spoke")
+
+    def test_the_tools_riding_brings_back_the_calls(self, server):
+        """The tools array and the messages ride all the way in to the
+        container's chat endpoint; the parser brings back the structure,
+        and the pair stamping rides the chat road as ever the ids."""
+        receiver = _adapter(
+            "receiver-model",
+            server,
+            role="receiver",
+            peer_model="sharer-model",
+        )
+        answer = receiver.generate(
+            [104, 105],
+            tools=[{"type": "function", "function": {"name": "get_capital"}}],
+            messages=[{"role": "user", "content": "what is the capital of France?"}],
+        )
+        assert isinstance(answer, dict)  # the chat road: the structure, no string reply
+        assert answer["finish_reason"] == "tool_calls"
+        assert answer["content"] is None  # the model spoke through the calls
+        call = answer["tool_calls"][0]
+        assert call["function"]["name"] == "get_capital"  # the parser picked it out
+        assert json.loads(call["function"]["arguments"]) == {"country": "France"}
+        _, body = _Recorder.received[-1]  # the last leg was the chat road
+        assert body["messages"] == [{"role": "user", "content": "what is the capital of France?"}]
+        assert body["tools"]  # and the schema rode with it
+        assert body["kv_transfer_params"]["c2c"]["role"] == "receiver"  # the stamp, too
 
     def test_a_name_the_server_does_not_serve_dies_naming_the_flag(self, server):
         adapter = _adapter("no-such-model", server)
