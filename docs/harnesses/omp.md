@@ -6,11 +6,30 @@ session. The wire between models is the only thing C2C is.
 
 ## 1. The front, up
 
-From the clone (see the README's Quickstart — one paste gets the venv and
-the install): train a wire for the built-in toy pair, then serve the pair
-with that wire attached. The toy models answer gibberish — they are
-random-init by design; the point is the `fused=true` in the front's own log
-line, which says the cache actually travelled:
+The featured road, as walked: a wired vLLM container on :8888 carrying
+`qwen3.8-flash-next`, the front speaking OpenAI to it, and omp to the
+front. The full walk — the plain server first, the identity proof while
+it stands, the launch that mounts the connector and parks the plain —
+is [`road-b/`](../../road-b/README.md); the two commands that finish
+are:
+
+```bash
+GATE=closed road-b/launch_wired.sh
+./c2c-venv/bin/c2c-serve --engine vllm-wired \
+    --url http://127.0.0.1:8888 \
+    --pair 'qwen3.8-flash-next←qwen3.8-flash-next' \
+    --host 127.0.0.1 --port 8788
+```
+
+The front answers on :8788 with the pair, the gallery, and the access
+log; `fused=false` at the gate, which holds until the wire is fitted
+(`road-b/train_handoff.md`, the two roads that can). To substitute
+another model, name it in `--pair` and at the harness; to reach a
+different server, give `--url`; the caller need not `--stop` — the
+front's default port of 8788 can be bypassed for `--port` switches.
+
+No wired server in sight? The miniature pair is the crossbar, and the
+CI will not budge:
 
 ```bash
 c2c train -d fixtures/datasets/tiny.jsonl \
@@ -20,9 +39,10 @@ c2c-serve --pair receiver-mini+sharer-mini:demo-fuser.safetensors \
      -e reference --host 127.0.0.1 --port 8788
 ```
 
-Real models ride the same two commands. With `-e hf` (`pip install
-transformers`; the adapter builds both models itself), the two halves of the
-pair are Hugging Face ids or local model folders:
+The toy models answer gibberish — random-init by design; the point is
+the `fused=true` in the front's own log line, which says the cache
+travelled. Real HF models ride the same two commands with `-e hf`
+(`pip install transformers`; the adapter builds both halves itself):
 
 ```bash
 c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:fuser.safetensors \

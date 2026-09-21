@@ -3,7 +3,7 @@
 All notable changes to C2C — Cache-to-Cache — are documented here.
 The format follows Keep a Changelog; the numbers, Semantic Versioning.
 
-## [unreleased] — the wired road: the tenth adapter, the connector, the proof
+## [unreleased] — the wired road, walked twice: the tokens, the tools, the streams
 
 ### Added
 - The tenth engine adapter, `vllm-wired`: the front speaks to a running
@@ -47,6 +47,24 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
 - A base that refuses the cards no longer kills the worker: registration
   failure logs the fault, closes the gate, and the receiver answers from its
   own cache — fail closed, never fatal.
+- The tokenizer's roads take the shapes the server will step in on: the
+  `/tokenize` prompt as a string, the `/detokenize` ids flat — the batch
+  form is refused on the B side of the line, and the front answers through
+  on both roads.
+- The tools arm is no longer dropped in good faith: when the `tools` array
+  rides, the wired adapter's receiver's leg switches to the container's
+  `/v1/chat/completions`, where the served model's own parser picks out the
+  calls — the harness sees `finish_reason=tool_calls` and the structure,
+  in place of the model's imitation of the call as prose. The pair
+  stamping rides the chat road as well as the ids; the non-chat engines
+  can bypass the branch, so the caller need not stop for the type change.
+- The streamer brings the calls back as a field: on the chat road the
+  `tool_calls` ride the final frame's delta, the content framed alone —
+  the dumps stay out of the wire, and the harness parses the delta and
+  stops on the finish.
+- The face-2 budget of the identity proof leaves headroom for an open
+  think block, so the bare number reaches the bottom when the model
+  opens its reasoning: B0 HOLDS on all six faces.
 
 ## [1.0.0] — the first public release (roadmap, per the specification's M6)
 

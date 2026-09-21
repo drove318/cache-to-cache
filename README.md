@@ -77,22 +77,83 @@ The answer of the fusion prints, and the report of the fuser tells: per-layer
 gates, injection order, blend fractions — the shape of your fuser, on your
 terminal. The numbers of the paper ride with `c2c eval` (just above).
 
-The miniature pair is plumbing: deterministic reference nets, no weights, no
-downloads — four commands that prove the whole wire on any machine. Real
-pairs ride the same two commands with `-e hf`, on any Hugging-Face-format
-folders the machine can reach (`pip install "c2c-cache[hf]"` first):
+## The featured setup: Qwen3.8 on a wired vLLM, driven by omp
+
+The road below was walked end to end on a DGX Spark (GB10, unified memory):
+one container, the served weights never leave the box, the harness none the
+better. It is the setup this repository is tested against — copy, paste,
+and try. The miniature pair above is the crossbar: a deterministic toy the
+CI can reach, proof without a GPU; the real models ride the bus and the
+answer can be bypassed when the container takes the role of the B test.
+
+Four steps, in order. The box reaches the end of the parse in step 4 and
+stop, or the caller can stack:
+
+**1. The plain server.** Bring up vLLM in docker serving
+`Mia-AiLab/Qwen3.8-Flash-Next-NVFP4` as `qwen3.8-flash-next`, 524288
+context, on loopback port 8888. On this box the operator brings up the
+container through `/c2c/boot.sh`; `road-b/launch_wired.sh --help` will
+step in and the engine can be bypassed, so the caller can examine the
+route map and fall back on the shell's escape.
+
+**2. The identity proof.** While the plain server still stands, keep its
+word and take the six greedy faces; then relaunch with the connector
+riding, gate closed, and verify the answers byte for byte:
 
 ```bash
-c2c train -d data/your-instructions.jsonl \
-       --receiver Qwen/Qwen3-0.6B --sharer Qwen/Qwen2.5-Math-1.5B \
-       -e hf --epochs 1 -o checkpoints/math-to-small.safetensors
-c2c-serve -e hf --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:checkpoints/math-to-small.safetensors
+road-b/identity_proof.sh baseline                          # the plain server's word
+GATE=closed road-b/launch_wired.sh                         # the connector mounts in
+WIRED_BOOT=plain road-b/identity_proof.sh verify           # B0 HOLDS, face after face
 ```
 
-Point any OpenAI client at `http://127.0.0.1:8788/v1`, name the pair in
-`model=` (the gallery at `/v1/models` prints the exact strings), and the
-answer arrives from the receivers mouth, informed by the sharers cache —
-a row of the paper's Table 7, the heterogeneous pair, on your hardware.
+The launch replays the container's birth certificate from `docker inspect`
+— image, argv, env, the engine-patching binds — installs the wheel from
+this checkout, and adds only `--kv-transfer-config`; the plain container
+is parked, never deleted, and a launch that fails to reach health rolls
+itself back. The road, with its two traps and their cures, is
+[`road-b/`](road-b/README.md).
+
+**3. The front.** Let the served speak to the OpenAI side, so the harness
+need not call:
+
+```bash
+./c2c-venv/bin/c2c-serve --engine vllm-wired \
+    --url http://127.0.0.1:8888 \
+    --pair 'qwen3.8-flash-next←qwen3.8-flash-next'
+```
+
+The front answers on :8788; the gallery at `/v1/models` prints the exact
+pair names, and the access log carries the fused truth of every exchange.
+With `tools` in the request the containers parser picks out the calls and
+the finish_reason stops on `tool_calls` — the harness parses the delta
+and the caller never falls.
+
+**4. The harness.** Point Oh My Pi at the front and stop — the harness
+stays the master:
+
+```bash
+omp --model 'c2c/qwen3.8-flash-next←qwen3.8-flash-next'
+```
+
+The provider block, in `~/.omp/agent/models.yml`, registers the front as
+one model among any other:
+
+```yaml
+    c2c:
+        api: openai-completions
+        auth: none
+        baseUrl: http://127.0.0.1:8788/v1
+        models:
+            - id: c2c/qwen3.8-flash-next←qwen3.8-flash-next
+              name: Qwen3.8 wired pair
+```
+
+To try another model or harness, the substitute need not call: name the
+model the container serves in `--pair` and the harness's `model=`, point
+`--url` at another server, or leave the `--port` to the front's default
+of 8788. The fuser, until then, will not reach the bottom on a wire: the
+gate stays closed and the answers stand, word for word — see the entry
+for `road-b/train_handoff.md` when a trained wire is ready to ride.
 
 ## Use, anywhere; wire between models
 
