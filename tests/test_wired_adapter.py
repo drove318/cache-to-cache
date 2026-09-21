@@ -11,6 +11,8 @@ what the pair actually did.
 
 import json
 import threading
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -270,3 +272,53 @@ class TestTheFrontKeepsItsWord:
         assert legs[0]["model"] == legs[1]["model"] == "receiver-model"  # one server, two legs
         assert legs[0]["kv_transfer_params"]["c2c"]["role"] == "sharer"
         assert legs[1]["kv_transfer_params"]["c2c"]["role"] == "receiver"
+
+    def test_the_streaming_road_carries_the_calls_as_a_field(self, server):
+        """The streamer must not dump the calls into the content: on the
+        chat road the calls ride the final frame as a field, the content
+        alone — so the harness parses the delta and stops on the finish."""
+        from c2c.config import ServeConfig
+        from c2c.serve.openai_proxy import _register_cli_pairs, create_server
+
+        hub = ModelHub()
+        hub.set_engine("vllm-wired")
+        _register_cli_pairs(
+            hub,
+            ["receiver-model←sharer-model"],
+            engine="vllm-wired",
+            url=server,
+        )
+        httpd = create_server(ServeConfig(host="127.0.0.1", port=0), hub=hub)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{httpd.server_address[1]}/v1/chat/completions",
+                data=json.dumps(
+                    {
+                        "model": "c2c/receiver-model←sharer-model",
+                        "messages": [{"role": "user", "content": "capital of France?"}],
+                        "tools": [{"type": "function", "function": {"name": "get_capital"}}],
+                        "max_tokens": 8,
+                        "stream": True,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                raw = response.read().decode("utf-8")
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+        frames = [
+            json.loads(line.removeprefix("data: "))
+            for line in raw.splitlines()
+            if line.startswith("data: ") and "[DONE]" not in line
+        ]
+        assert frames, "a stream, with no frames"
+        final = frames[-1]["choices"][0]
+        assert final["finish_reason"] == "tool_calls"  # the finish, at the end
+        assert final["delta"]["tool_calls"]  # the calls, as a field in the delta
+        streamed = "".join(frame["choices"][0]["delta"].get("content", "") for frame in frames)
+        assert "get_capital" not in streamed  # the calls stay out of the content

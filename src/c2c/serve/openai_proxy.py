@@ -827,18 +827,24 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
 
         answer = result["answer"]
         answer_finish = None
+        tool_calls = None
         if isinstance(answer, dict):
-            # the chat road: with streaming the tool calls cannot be held —
-            # the content is framed alone, and the calls ride the final frame
+            # the chat road: the calls must not be carried through as content;
+            # they ride the final frame as a field, the content alone — the
+            # harness parses the delta, not a dumps of it
             answer_finish = answer.get("finish_reason")
-            answer = _printable(answer)
+            tool_calls = answer.get("tool_calls")
+            answer = answer.get("content") or ""
         if chat:
             self.wfile.write(frame({"role": "assistant"}, None))
         width = 24  # one printable word per frame
         for i in range(0, max(len(answer), 1), width):
             piece = answer[i : i + width]
             self.wfile.write(frame({"content": piece}, None))
-        self.wfile.write(frame({}, answer_finish or "stop"))
+        final = {}
+        if tool_calls:
+            final["tool_calls"] = tool_calls  # the calls, as structure, in the delta
+        self.wfile.write(frame(final, answer_finish or "stop"))
         self.wfile.write(DONE_SENTINEL)
         self.wfile.flush()
 
