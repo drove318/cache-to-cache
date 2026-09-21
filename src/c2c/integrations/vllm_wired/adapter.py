@@ -92,17 +92,31 @@ class VLLMWiredAdapter(EngineAdapter):
             raise RuntimeError(msg) from exc
 
     def encode(self, text: str) -> list[int]:
-        """The engine's own tokenizer, asked over the engine's own road."""
-        answer = self._post("/tokenize", {"model": self.model_id, "prompt": [text]})
-        toks = answer.get("tokens") or [[]]
-        return [int(t) for t in toks[0]]
+        """The engine's own tokenizer, asked over the engine's own road.
+
+        The /tokenize road will not step in on a batch: the server expects
+        the prompt passed as a string, not called through the B side of the
+        list, so the string rides as itself. The answer comes back as a
+        tokens list, or batch; the row is taken when the server sends the
+        batch of lists.
+        """
+        answer = self._post("/tokenize", {"model": self.model_id, "prompt": text})
+        toks = answer.get("tokens") or []
+        if toks and isinstance(toks[0], list):
+            toks = toks[0]
+        return [int(t) for t in toks]
 
     def decode_tokens(self, token_ids) -> str:
-        answer = self._post("/detokenize", {"model": self.model_id, "tokens": [list(token_ids)]})
-        for row in answer.get("text") or [""]:
-            if isinstance(row, str):
-                return row
-        return ""
+        answer = self._post(
+            "/detokenize", {"model": self.model_id, "tokens": [int(t) for t in token_ids]}
+        )
+        text = answer.get("text")
+        if isinstance(text, list):
+            for row in text:
+                if isinstance(row, str):
+                    return row
+            return ""
+        return str(text) if text is not None else ""
 
     def _build_spec(self) -> ModelSpec:
         """The card the server shows; the geometry it keeps to itself.
