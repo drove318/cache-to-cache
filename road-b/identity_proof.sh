@@ -40,7 +40,7 @@ PROMPTS=(
     "Summarize in one sentence: the quick brown fox jumps over the lazy dog while the farmer watches:"
     "Translate to french: good morning, how are you today?"
 )
-MAXTOK=(12 10 12 24 32 20)
+MAXTOK=(12 10 64 24 32 20)   # face 2: leave headroom for an open think block
 
 ask() {                                   # $1 index -> stdout, the server's text
     local i=$1 body
