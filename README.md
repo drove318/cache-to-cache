@@ -119,14 +119,17 @@ need not call:
 ```bash
 ./c2c-venv/bin/c2c-serve --engine vllm-wired \
     --url http://127.0.0.1:8888 \
-    --pair 'qwen3.8-flash-next←qwen3.8-flash-next'
+    --pair 'qwen3.8-flash-next←qwen3.8-flash-next' \
+    --timeout 1800
 ```
 
 The front answers on :8788; the gallery at `/v1/models` prints the exact
 pair names, and the access log carries the fused truth of every exchange.
 With `tools` in the request the containers parser picks out the calls and
 the finish_reason stops on `tool_calls` — the harness parses the delta
-and the caller never falls.
+and the caller never falls. The `--timeout 1800` window gives the long
+haul room: the wired pair rides each leg of a 500k prompt to minutes, and
+the 600-second default would drop the call before the answer arrives.
 
 **4. The harness.** Point Oh My Pi at the front and stop — the harness
 stays the master:
@@ -150,10 +153,10 @@ one model among any other:
 
 To try another model or harness, the substitute need not call: name the
 model the container serves in `--pair` and the harness's `model=`, point
-`--url` at another server, or leave the `--port` to the front's default
-of 8788. The fuser, until then, will not reach the bottom on a wire: the
-gate stays closed and the answers stand, word for word — see the entry
-for `road-b/train_handoff.md` when a trained wire is ready to ride.
+`--url` at another server, leave the `--port` to the front's default of
+8788, or raise `--timeout` when the context runs long. Until a wire is
+fitted, the gate stays closed and the answers stand, word for word — see
+`road-b/train_handoff.md` for the two roads that can fit one.
 
 ## Use, anywhere; wire between models
 

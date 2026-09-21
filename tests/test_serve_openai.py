@@ -263,3 +263,33 @@ class TestCanonicalRoutes:
         for route, method in (("/v1/models", "GET"), ("/healthz", "GET")):
             status, _ = _request(server + route, method=method, headers=AUTH)
             assert status == 200, f"{method} {route} → {status}"  # the pipe, intact
+
+
+class TestTimeoutWindow:
+    """The window the sidecar allows the served to answer."""
+
+    def test_the_timeout_is_parsed(self):
+        from c2c.serve.openai_proxy import build_parser
+        args = build_parser("c2c-serve").parse_args(
+            ["--engine", "vllm-wired", "--url", "http://127.0.0.1:1",
+             "--pair", "rx←tx", "--timeout", "1800"],
+        )
+        assert args.timeout == 1800.0  # the window, taken
+
+    def test_the_default_leaves_the_window_to_the_sidecar(self):
+        from c2c.serve.openai_proxy import build_parser
+        args = build_parser("c2c-serve").parse_args(
+            ["--engine", "reference", "--pair", "rx+tx"],
+        )
+        assert args.timeout is None  # the adapter's 600 stands
+
+    def test_the_pair_carries_the_window(self):
+        from c2c.serve.registry import ModelHub
+        from c2c.serve.openai_proxy import _register_cli_pairs
+        hub = ModelHub()
+        hub.set_engine("vllm-wired")
+        _register_cli_pairs(
+            hub, ["rx←tx"], engine="vllm-wired",
+            url="http://127.0.0.1:1", timeout=1800.0,
+        )
+        assert hub.resolve("c2c/rx←tx").receiver.timeout == 1800.0

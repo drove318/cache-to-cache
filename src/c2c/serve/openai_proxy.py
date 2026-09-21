@@ -980,6 +980,13 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
         "SHA-256 digests only (EX-5 privacy; the seal is offered, "
         "not yet wired — see serve/privacy)",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        metavar="SECS",
+        help="seconds to wait for a served answer (default 600; raise it for 500k contexts)",
+    )
     return parser
 
 
@@ -991,6 +998,7 @@ def _register_cli_pairs(
     url: str | None = None,
     receiver_url: str | None = None,
     sharer_url: str | None = None,
+    timeout: float | None = None,
 ) -> None:
     """Parse ``--pair`` specifications and register them on the hub."""
     probed: set[str] = set()
@@ -1013,9 +1021,12 @@ def _register_cli_pairs(
                 if mid != receiver_id:
                     continue
                 peer, role = mid, "receiver"
+            opts: dict = {"base_url": base, "role": role, "peer_model": peer}
+            if timeout is not None:
+                opts["timeout"] = float(timeout)
             hub.register_model(
                 mid,
-                options={"base_url": base, "role": role, "peer_model": peer},
+                options=opts,
                 note=f"side of a wired pair ({role})",
             )
         fuser = None
@@ -1156,6 +1167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             url=args.url,
             receiver_url=args.receiver_url,
             sharer_url=args.sharer_url,
+            timeout=args.timeout,
         )
     _preflight_tls(cfg, "c2c-serve")
     try:

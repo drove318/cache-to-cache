@@ -32,6 +32,10 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
 - `c2c train --engine vllm-wired` refuses, and refuses honestly: the
   fp8 kernels are a value without a gradient, the unified pool holds no
   second model, and the wire must wear the servers geometry.
+- `c2c-serve --timeout SECS` sets the window the sidecar allows the
+  served to answer; the 600-second default covers ordinary exchanges,
+  but the wired pair rides each leg of a 500k prompt to minutes, so the
+  long haul names the window up (1800 seconds on this box).
 
 ### Fixed
 - The wired connector carried two abstract debts it had never paid:

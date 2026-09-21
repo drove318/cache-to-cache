@@ -7,7 +7,8 @@ SYNOPSIS
        c2c-serve [--host HOST] [--port PORT] [--certfile FILE]
                  [--keyfile FILE] [--api-key KEY | C2C_API_KEY]
                  [--pair RECEIVER[+SHARER[:WEIGHTS.pt]]]
-                 [-e ENGINE] [--config FILE] [--privacy] [-v]
+       [-e ENGINE] [--config FILE] [--privacy]
+       [--timeout SECS] [-v]
 
 DESCRIPTION
        The front answers on a port, and fuses the cache of the sharer
@@ -38,7 +39,11 @@ OPTIONS
                           ollama, mlx, llama-cpp, reference
        --pair RECEIVER+SHARER[:WEIGHTS.pt]
                           register a collaboration pair; repeatable
-       --config FILE      the JSON configuration of the served
+ --config FILE      the JSON configuration of the served
+ --timeout SECS     the window the sidecar allows the served to
+                    answer; default 600, raise it when the context
+                    runs long, for the wired pair rides each leg of
+                    a 500k prompt to minutes
        --privacy          no cache, no trace: the sharer's context is
                           refused before it is attempted, the receiver
                           answers alone, the log carries digests only
