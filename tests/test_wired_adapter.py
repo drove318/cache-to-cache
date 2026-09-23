@@ -322,3 +322,48 @@ class TestTheFrontKeepsItsWord:
         assert final["delta"]["tool_calls"]  # the calls, as a field in the delta
         streamed = "".join(frame["choices"][0]["delta"].get("content", "") for frame in frames)
         assert "get_capital" not in streamed  # the calls stay out of the content
+
+
+class TestTheServedRefuses:
+    """A 4xx from the served is the caller's to read, not a 500 mystery."""
+
+    def test_a_refusal_on_the_shape_is_the_callers_own(self, server, monkeypatch):
+        from c2c.integrations.vllm_wired.adapter import ServedRejected
+
+        def refuse(self):
+            self.send_error(400, "over the ceiling")
+
+        monkeypatch.setattr(_Recorder, "do_POST", refuse)
+        adapter = _adapter("receiver-model", server, role="receiver", peer_model="sharer-model")
+        with pytest.raises(ServedRejected) as got:
+            adapter._post("/v1/chat/completions", {"model": "receiver-model"})
+        assert got.value.served_status == 400  # the served's status, kept
+
+    def test_a_refusal_on_the_front_stays_ours(self, server, monkeypatch):
+        from c2c.integrations.vllm_wired.adapter import ServedRejected
+
+        def refuse(self):
+            self.send_error(404, "no such road")
+
+        monkeypatch.setattr(_Recorder, "do_POST", refuse)
+        adapter = _adapter("receiver-model", server, role="receiver", peer_model="sharer-model")
+        with pytest.raises(RuntimeError) as got:
+            adapter._post("/tokenize", {"prompt": "ab"})
+        assert not isinstance(got.value, ServedRejected)  # a misfitting on our side
+
+    def test_the_window_is_what_the_server_says(self, server, monkeypatch):
+        def card(self):
+            self._say(
+                {
+                    "object": "list",
+                    "data": [{"id": "receiver-model", "max_model_len": 524288}],
+                }
+            )
+
+        monkeypatch.setattr(_Recorder, "do_GET", card)
+        claimed = VLLMWiredAdapter.report_context("receiver-model", base_url=server)
+        assert claimed == 524288  # read over http, never invented
+
+    def test_silence_is_silence(self, server):
+        # the stand-in's card prints no max_model_len: the gallery says nothing
+        assert VLLMWiredAdapter.report_context("receiver-model", base_url=server) is None

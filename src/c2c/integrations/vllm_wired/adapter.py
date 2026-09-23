@@ -35,7 +35,23 @@ import uuid
 from ...types import LayerGeometry, ModelSpec
 from ..registry import EngineAdapter
 
-__all__ = ["VLLMWiredAdapter", "available"]
+__all__ = ["VLLMWiredAdapter", "ServedRejected", "available"]
+
+
+class ServedRejected(RuntimeError):
+    """The served said 4xx to the shape of a request that came over the wire.
+
+    The fault is the caller's, not the fuse's: a refusal that strikes down
+    the body (400, 413, 422, 429 — the length, the vars, the window) rides
+    on whole, the served's words kept, so a harness learns what to shorten
+    rather than being handed an unknowable 500. A refusal that strikes down
+    the front (a road gone, a key refused) is our own misfitting and stays
+    a plain RuntimeError: 500, and the server log.
+    """
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.served_status = int(status)
 
 
 def available() -> bool:
@@ -69,6 +85,31 @@ class VLLMWiredAdapter(EngineAdapter):
         self.api_key = self.options.get("api_key")
         self.log = logging.getLogger("c2c.wired").getChild("adapter")
 
+    @classmethod
+    def report_context(cls, model_id: str, **options) -> int | None:
+        """What the running server claims it serves: its own card, asked live.
+
+        The weights are the server's, not ours, so the window is read over
+        HTTP — the served's /v1/models entry, its max_model_len field. Any
+        silence (no server, no entry, no field) is silence: None, and the
+        gallery holds the number back rather than invent one.
+        """
+        base = str(options.get("base_url") or "http://127.0.0.1:8000").rstrip("/")
+        try:
+            with urllib.request.urlopen(f"{base}/v1/models", timeout=5.0) as response:
+                card = json.loads(response.read().decode("utf-8"))
+        except (OSError, ValueError):
+            return None
+        entries = card.get("data") or []
+        for entry in entries:
+            if entry.get("id") == str(model_id):
+                length = entry.get("max_model_len")
+                return int(length) if length else None
+        if len(entries) == 1:  # one model served: its card is the answer
+            length = entries[0].get("max_model_len")
+            return int(length) if length else None
+        return None
+
     # -- the engine's roads, taken plainly ──────────────────────────────────
     def _post(self, path: str, payload: dict | None = None, *, method: str = "POST") -> dict:
         headers = {"Content-Type": "application/json"}
@@ -89,6 +130,8 @@ class VLLMWiredAdapter(EngineAdapter):
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:400] if exc.fp else ""
             msg = f"the wired server refused {path!r}: {exc.code} {exc.reason} {detail}".strip()
+            if exc.code in (400, 413, 422, 429):
+                raise ServedRejected(exc.code, msg) from exc  # the caller's, whole
             raise RuntimeError(msg) from exc
         except OSError as exc:
             msg = f"the wired server at {self.base} does not answer ({exc})"

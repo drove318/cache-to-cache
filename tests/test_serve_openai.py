@@ -293,3 +293,39 @@ class TestTimeoutWindow:
             url="http://127.0.0.1:1", timeout=1800.0,
         )
         assert hub.resolve("c2c/rx←tx").receiver.timeout == 1800.0
+
+
+class TestTheServedsRefusal:
+    """A 4xx from the served rides through as a 400, the served's words whole."""
+
+    def test_the_ceiling_tells_the_caller_what_to_shorten(self):
+        from c2c.integrations.vllm_wired.adapter import ServedRejected
+        from c2c.serve.openai_proxy import _served_problem
+
+        body = {
+            "error": {
+                "message": "This model's maximum context length is 524288 tokens. "
+                "However, you requested 64000 output tokens and your prompt contains "
+                "at least 460289 input tokens.",
+                "type": "BadRequestError",
+                "param": "input_tokens",
+                "code": 400,
+            }
+        }
+        wire = (
+            "the wired server refused '/v1/chat/completions': 400 Bad Request "
+            + json.dumps(body)
+        )
+        problem = _served_problem(ServedRejected(400, wire))
+        assert problem.status == 400  # the caller's to read, not a 500 mystery
+        assert "maximum context length" in problem.message  # the served's words, whole
+        assert problem.code == "context_length_exceeded"
+        assert problem.param == "input_tokens"
+
+    def test_a_plain_refusal_rides_as_it_came(self):
+        from c2c.integrations.vllm_wired.adapter import ServedRejected
+        from c2c.serve.openai_proxy import _served_problem
+
+        problem = _served_problem(ServedRejected(413, "the wired server refused: no json"))
+        assert problem.message.endswith("no json")  # restated, never laundered
+        assert problem.code == "unknown_error"

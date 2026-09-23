@@ -36,6 +36,11 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
   served to answer; the 600-second default covers ordinary exchanges,
   but the wired pair rides each leg of a 500k prompt to minutes, so the
   long haul names the window up (1800 seconds on this box).
+- The wired adapter's card can now speak its window: `report_context`
+  asks the running server its own `/v1/models` for `max_model_len`, the
+  gallery prints what the served claims, and a harness sizes to the
+  truth. Silence is silence: no server, no claim, no number. The harness
+  paste recipe takes the number wherever the front can state it.
 
 ### Fixed
 - The wired connector carried two abstract debts it had never paid:
@@ -69,6 +74,14 @@ The format follows Keep a Changelog; the numbers, Semantic Versioning.
 - The face-2 budget of the identity proof leaves headroom for an open
   think block, so the bare number reaches the bottom when the model
   opens its reasoning: B0 HOLDS on all six faces.
+- A 400 from the served no longer comes back a 500. When the wired server
+  strikes down the shape of a request — the length, the vars, the window
+  (400, 413, 422, 429) — the refusal rides on as a 400, the served's
+  words whole, a ceiling named `context_length_exceeded`: the caller
+  learns what to shorten instead of retrying a doom nine times over.
+  A 4xx that strikes down the front (a road gone, a key refused) stays
+  our misfitting: 500, and the server log. A caller that hangs up
+  mid-answer is told so quietly now, not shouted as unhandled.
 
 ## [1.0.0] — the first public release (roadmap, per the specification's M6)
 

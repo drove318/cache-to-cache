@@ -53,7 +53,9 @@ c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B:fuser.safetensors \
 
 Paste this into your terminal — it writes `c2c:` into `~/.omp/agent/models.yml`
 alongside your existing providers (creating the file if you have none, keeping a
-`.bak`, refusing a second paste), leaves every other field at omp's defaults,
+`.bak`, refusing a second paste), takes each model's window from the live
+front where the served server can state it, leaves every other field at
+omp's defaults,
 then asks omp itself to confirm:
 
 ```bash
@@ -74,13 +76,15 @@ if not gallery:
     print("  c2c-serve --pair Qwen/Qwen3-0.6B+Qwen/Qwen2.5-Math-1.5B -e hf   # real pair")
     raise SystemExit(2)
 rows = sorted({((lambda r: r[4:] if r.startswith("c2c/") else r)(str(m.get("id", ""))),
-                str(m.get("description") or ""))
+                str(m.get("description") or ""), m.get("max_context_tokens"))
                for m in gallery if m.get("id")})
 block = "    c2c:\n        api: openai-completions\n        auth: none\n"
 block += f"        baseUrl: {base}\n        models:\n"
-for mid, desc in rows:                        # the ids and notes the front prints itself
+for mid, desc, ctx in rows:                  # the ids and notes the front prints itself
     block += (f"            - id: {json.dumps(mid)}\n"
               f"              name: {json.dumps(desc or 'C2C ' + mid)}\n")
+    if ctx:                                  # the window, from the served's own card:
+        block += f"              contextWindow: {int(ctx)}\n"  # never from a default
 block += "\n"
 p = os.path.expanduser("~/.omp/agent/models.yml")
 os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -97,7 +101,7 @@ else:
         lines.insert(0, "providers:\n" + block)
     open(p, "w").writelines(lines)
     print(f"c2c merged, {len(rows)} model(s) taken from the live front: "
-          + ", ".join(mid for mid, _desc in rows)
+          + ", ".join(mid for mid, _desc, _ctx in rows)
           + (", backup at " + p + ".bak" if src else ""))
 EOF
 omp models find c2c

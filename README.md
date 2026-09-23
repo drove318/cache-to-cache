@@ -149,6 +149,12 @@ one model among any other:
         models:
             - id: c2c/qwen3.8-flash-next←qwen3.8-flash-next
               name: Qwen3.8 wired pair
+              # The pair rides the served: these are its numbers, not the
+              # harness's defaults. Left out, the harness bills prompt plus
+              # output over the ceiling, the served 400s, and every leg
+              # comes back a 500.
+              contextWindow: 524288
+              maxTokens: 32768
 ```
 
 To try another model or harness, the substitute need not call: name the

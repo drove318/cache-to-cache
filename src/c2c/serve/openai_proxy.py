@@ -48,6 +48,7 @@ from typing import Any
 
 from .. import __version__
 from ..config import ServeConfig, load_config
+from ..integrations.vllm_wired.adapter import ServedRejected
 from ..utils.console import banner, style
 from .privacy import NoTextFilter
 from .registry import default_hub
@@ -168,6 +169,29 @@ class HttpProblem(Exception):  # noqa: N818 — an HTTP response, not a crash
                 "code": self.code,
             }
         }
+
+
+def _served_problem(rejected) -> HttpProblem:
+    """The served's 4xx, restated as the error object the caller can read.
+
+    The served's own words are the useful part: where the body is the usual
+    error envelope, the message and param ride through whole. A refusal
+    that names the ceiling is named back — 400, context_length_exceeded —
+    so a harness learns to shorten the prompt or the requested output.
+    """
+    message, param = str(rejected), None
+    probe = message.find("{")
+    if probe >= 0:
+        try:
+            inner = json.loads(message[probe:]).get("error") or {}
+            message = inner.get("message") or message
+            param = inner.get("param")
+        except ValueError:
+            pass
+    over = "maximum context length" in message.lower()
+    return HttpProblem(
+        HTTPStatus.BAD_REQUEST, message, code="context_length_exceeded" if over else None, param=param
+    )
 
 
 def messages_to_text(messages: Sequence[Any]) -> str:
@@ -664,6 +688,10 @@ class OpenAIRequestHandler(BaseHTTPRequestHandler):
                 )
         except HttpProblem as problem:
             self._json(problem.to_json(), problem.status)
+        except ServedRejected as rejected:
+            self._json(_served_problem(rejected).to_json(), HTTPStatus.BAD_REQUEST)
+        except (ConnectionResetError, BrokenPipeError):
+            self.log_error("the caller hung up before the answer could be written")
         except Exception as exc:  # last line of defence
             self.log_error("unhandled: %r", exc)
             self._json(
